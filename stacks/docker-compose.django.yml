@@ -1,0 +1,125 @@
+# Remote test stack — build on your Mac, run on the VPS via a remote Docker context.
+#
+# Nothing here is project-specific: every value comes from .env.remote.
+# The service topology below assumes a Cookiecutter-Django backend
+# (django + postgres + redis + mailpit + celery + flower). For a different
+# stack, swap the `services:` block but KEEP the labels + networks pattern.
+#
+#   ./remote init   # one-time per project: create the docker context
+#   ./remote up     # build on the VPS + deploy
+#   ./remote down   # wipe it from the VPS (images + volumes gone)
+
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: ${DJANGO_DOCKERFILE:-./compose/local/django/Dockerfile}
+  env_file:
+    - ${APP_ENV_FILE:-./.envs/.local/.django}
+    - ${DB_ENV_FILE:-./.envs/.local/.postgres}
+  depends_on:
+    - postgres
+    - redis
+    - mailpit
+  # `./remote watch` live-syncs your Mac edits into the container. Django hot-reloads
+  # via uvicorn --reload; celery workers pick changes up on their next restart.
+  develop:
+    watch:
+      - action: sync
+        path: .
+        target: /app
+        ignore:
+          - .git/
+          - .venv/
+          - node_modules/
+          - __pycache__/
+          - "*.pyc"
+          - .env.remote
+
+volumes:
+  postgres_data: {}
+  postgres_data_backups: {}
+  redis_data: {}
+
+networks:
+  default: {}
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-coolify}
+
+services:
+  django:
+    <<: *app-base
+    command: /start
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.${PROJECT_NAME}-web.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-web.entrypoints=${CERT_ENTRYPOINT:-https}
+      - traefik.http.routers.${PROJECT_NAME}-web.tls=true
+      - traefik.http.routers.${PROJECT_NAME}-web.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-8000}
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ${POSTGRES_DOCKERFILE:-./compose/production/postgres/Dockerfile}
+    volumes:
+      - postgres_data:/var/lib/postgresql/18/docker
+      - postgres_data_backups:/backups
+    env_file:
+      - ${DB_ENV_FILE:-./.envs/.local/.postgres}
+    networks:
+      # Unique alias so the app never collides with a "postgres" on the shared
+      # proxy network (e.g. Coolify's own DB). Point DATABASE_URL at this host.
+      default:
+        aliases:
+          - ${PROJECT_NAME}-postgres
+
+  redis:
+    image: docker.io/redis:7.2
+    volumes:
+      - redis_data:/data
+    networks:
+      default:
+        aliases:
+          - ${PROJECT_NAME}-redis
+
+  mailpit:
+    image: docker.io/axllent/mailpit:latest
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.${PROJECT_NAME}-mail.rule=Host(`${MAIL_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-mail.entrypoints=${CERT_ENTRYPOINT:-https}
+      - traefik.http.routers.${PROJECT_NAME}-mail.tls=true
+      - traefik.http.routers.${PROJECT_NAME}-mail.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_NAME}-mail.loadbalancer.server.port=8025
+
+  celeryworker:
+    <<: *app-base
+    command: /start-celeryworker
+
+  celerybeat:
+    <<: *app-base
+    command: /start-celerybeat
+
+  flower:
+    <<: *app-base
+    command: /start-flower
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.${PROJECT_NAME}-flower.rule=Host(`${FLOWER_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-flower.entrypoints=${CERT_ENTRYPOINT:-https}
+      - traefik.http.routers.${PROJECT_NAME}-flower.tls=true
+      - traefik.http.routers.${PROJECT_NAME}-flower.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_NAME}-flower.loadbalancer.server.port=5555

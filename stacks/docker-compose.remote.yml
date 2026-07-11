@@ -1,0 +1,38 @@
+# Generic remote test stack — ANY language / framework.
+#
+# Requirement: your project has a Dockerfile that builds a runnable web service
+# listening on ${APP_PORT}. That's it. Node, Go, Rust, Python, PHP, static —
+# Docker doesn't care what's inside.
+#
+# Need a database, cache, etc.? Add services below and put them on the `default`
+# network (only web-facing services need the `proxy` network + traefik labels).
+# For a full Cookiecutter-Django stack, set COMPOSE_FILE=docker-compose.django.yml
+# in .env.remote instead.
+#
+#   ./remote init | up | down   (see README)
+
+networks:
+  default: {}
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-coolify}
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ${APP_DOCKERFILE:-./Dockerfile}
+    networks:
+      # If you add backing services (db/cache) and share a proxy network that has
+      # same-named services (e.g. Coolify), give them a unique alias and point your
+      # app at that host — see docker-compose.django.yml for the pattern.
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.${PROJECT_NAME}-web.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-web.entrypoints=${CERT_ENTRYPOINT:-https}
+      - traefik.http.routers.${PROJECT_NAME}-web.tls=true
+      - traefik.http.routers.${PROJECT_NAME}-web.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-8000}

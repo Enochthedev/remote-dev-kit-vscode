@@ -1,0 +1,41 @@
+# Standalone Traefik — turns a BARE VPS (just Docker) into an auto-HTTPS host.
+# Run ONCE per server:  ./remote proxy up
+#
+# Skip this entirely if your VPS already runs a proxy (e.g. Coolify): instead set
+# PROXY_NETWORK=coolify in .env.remote and don't run `./remote proxy`.
+#
+# Entrypoint `https` + resolver `letsencrypt` are named to match the app stacks,
+# so the same labels work whether Traefik is this one or Coolify's.
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-web}
+
+volumes:
+  traefik_acme: {}
+
+services:
+  traefik:
+    image: traefik:v3
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=${PROXY_NETWORK:-web}
+      - --entrypoints.web.address=:80
+      - --entrypoints.https.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=https
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env.remote}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_acme:/acme
+    networks:
+      - proxy
