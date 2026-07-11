@@ -85,7 +85,8 @@ export function writeEnvFile(ctx: vscode.ExtensionContext, cfg: RdkConfig): stri
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${cfg.projectName}.env`);
   const body = Object.entries(envMap(cfg))
-    .map(([k, v]) => `${k}=${v}`)
+    // strip newlines so a setting value can't inject extra env lines
+    .map(([k, v]) => `${k}=${String(v).replace(/[\r\n]+/g, " ")}`)
     .join("\n");
   fs.writeFileSync(file, body + "\n", "utf8");
   return file;
