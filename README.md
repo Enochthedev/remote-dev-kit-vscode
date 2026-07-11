@@ -65,4 +65,20 @@ npm install
 npm run compile        # bundle with esbuild → dist/
 # press F5 in VS Code to launch an Extension Development Host
 npx @vscode/vsce package   # → remote-dev-kit-<version>.vsix
+code --install-extension remote-dev-kit-*.vsix   # try it in your editor
 ```
+
+## Publishing to the Marketplace
+
+One-time (needs a Marketplace **publisher** + an Azure DevOps **Personal Access Token**
+with Marketplace → Manage scope):
+
+```bash
+npx @vscode/vsce create-publisher enochthedev   # once, if not created
+npx @vscode/vsce login enochthedev              # paste your PAT
+npx @vscode/vsce publish                        # from this folder
+```
+
+Bump `version` in `package.json` before each publish. `vsce publish patch|minor|major`
+bumps + publishes in one step.
+
