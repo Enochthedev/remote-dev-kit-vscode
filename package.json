@@ -4,63 +4,231 @@
   "description": "Run and hot-reload your project on a remote VPS from VS Code — no local Docker, code stays on your machine.",
   "version": "0.1.0",
   "publisher": "enochthedev",
+  "author": {
+    "name": "Wave",
+    "url": "https://github.com/Enochthedev"
+  },
   "license": "MIT",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
-  "keywords": ["docker", "remote", "vps", "deploy", "traefik", "hot reload", "coolify"],
-  "repository": { "type": "git", "url": "https://github.com/Enochthedev/remote-dev-kit-vscode" },
-  "bugs": { "url": "https://github.com/Enochthedev/remote-dev-kit-vscode/issues" },
-  "activationEvents": ["onStartupFinished"],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#7C3AED",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "docker",
+    "remote",
+    "vps",
+    "deploy",
+    "traefik",
+    "hot reload",
+    "coolify"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Enochthedev/remote-dev-kit-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Enochthedev/remote-dev-kit-vscode/issues"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "remoteDevKit.deploy", "title": "Deploy", "category": "Remote Dev Kit", "icon": "$(cloud-upload)" },
-      { "command": "remoteDevKit.watch", "title": "Watch (Hot Reload)", "category": "Remote Dev Kit", "icon": "$(eye)" },
-      { "command": "remoteDevKit.down", "title": "Destroy", "category": "Remote Dev Kit", "icon": "$(trash)" },
-      { "command": "remoteDevKit.logs", "title": "Logs", "category": "Remote Dev Kit", "icon": "$(output)" },
-      { "command": "remoteDevKit.status", "title": "Status", "category": "Remote Dev Kit", "icon": "$(pulse)" },
-      { "command": "remoteDevKit.openInBrowser", "title": "Open in Browser", "category": "Remote Dev Kit", "icon": "$(globe)" },
-      { "command": "remoteDevKit.connect", "title": "Connect to VPS (create context)", "category": "Remote Dev Kit", "icon": "$(plug)" },
-      { "command": "remoteDevKit.proxyUp", "title": "Start Proxy (bare VPS)", "category": "Remote Dev Kit", "icon": "$(server)" },
-      { "command": "remoteDevKit.configure", "title": "Configure…", "category": "Remote Dev Kit", "icon": "$(gear)" },
-      { "command": "remoteDevKit.refresh", "title": "Refresh", "category": "Remote Dev Kit", "icon": "$(refresh)" }
+      {
+        "command": "remoteDevKit.deploy",
+        "title": "Deploy",
+        "category": "Remote Dev Kit",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "remoteDevKit.watch",
+        "title": "Watch (Hot Reload)",
+        "category": "Remote Dev Kit",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "remoteDevKit.down",
+        "title": "Destroy",
+        "category": "Remote Dev Kit",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "remoteDevKit.logs",
+        "title": "Logs",
+        "category": "Remote Dev Kit",
+        "icon": "$(output)"
+      },
+      {
+        "command": "remoteDevKit.status",
+        "title": "Status",
+        "category": "Remote Dev Kit",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "remoteDevKit.openInBrowser",
+        "title": "Open in Browser",
+        "category": "Remote Dev Kit",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "remoteDevKit.connect",
+        "title": "Connect to VPS (create context)",
+        "category": "Remote Dev Kit",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "remoteDevKit.proxyUp",
+        "title": "Start Proxy (bare VPS)",
+        "category": "Remote Dev Kit",
+        "icon": "$(server)"
+      },
+      {
+        "command": "remoteDevKit.configure",
+        "title": "Configure…",
+        "category": "Remote Dev Kit",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "remoteDevKit.refresh",
+        "title": "Refresh",
+        "category": "Remote Dev Kit",
+        "icon": "$(refresh)"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
-        { "id": "remoteDevKit", "title": "Remote Dev Kit", "icon": "media/rocket.svg" }
+        {
+          "id": "remoteDevKit",
+          "title": "Remote Dev Kit",
+          "icon": "media/rocket.svg"
+        }
       ]
     },
     "views": {
       "remoteDevKit": [
-        { "id": "remoteDevKitView", "name": "Remote Dev Kit" }
+        {
+          "id": "remoteDevKitView",
+          "name": "Remote Dev Kit"
+        }
       ]
     },
     "menus": {
       "view/title": [
-        { "command": "remoteDevKit.deploy", "when": "view == remoteDevKitView", "group": "navigation@1" },
-        { "command": "remoteDevKit.watch", "when": "view == remoteDevKitView", "group": "navigation@2" },
-        { "command": "remoteDevKit.refresh", "when": "view == remoteDevKitView", "group": "navigation@3" },
-        { "command": "remoteDevKit.configure", "when": "view == remoteDevKitView", "group": "overflow@1" }
+        {
+          "command": "remoteDevKit.deploy",
+          "when": "view == remoteDevKitView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "remoteDevKit.watch",
+          "when": "view == remoteDevKitView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "remoteDevKit.refresh",
+          "when": "view == remoteDevKitView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "remoteDevKit.configure",
+          "when": "view == remoteDevKitView",
+          "group": "overflow@1"
+        }
       ],
       "commandPalette": [
-        { "command": "remoteDevKit.refresh", "when": "false" }
+        {
+          "command": "remoteDevKit.refresh",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
       "title": "Remote Dev Kit",
       "properties": {
-        "remoteDevKit.projectName": { "type": "string", "default": "", "markdownDescription": "Unique name for this project. Namespaces containers, volumes and routes. Defaults to the workspace folder name." },
-        "remoteDevKit.appHost": { "type": "string", "default": "", "description": "Public host for the app, e.g. myapp.dev.yourdomain.com." },
-        "remoteDevKit.appPort": { "type": "number", "default": 8000, "description": "Port your app listens on inside the container." },
-        "remoteDevKit.vpsSsh": { "type": "string", "default": "", "description": "SSH target for the VPS, e.g. root@203.0.113.10 (key-based, passwordless)." },
-        "remoteDevKit.stack": { "type": "string", "enum": ["generic", "django"], "default": "generic", "enumDescriptions": ["One web service from your ./Dockerfile (any language).", "Full Cookiecutter-Django stack (postgres/redis/mailpit/celery/flower)."], "description": "Which bundled stack to run." },
-        "remoteDevKit.appDockerfile": { "type": "string", "default": "./Dockerfile", "description": "Path to your Dockerfile (generic stack)." },
-        "remoteDevKit.appService": { "type": "string", "default": "app", "description": "Primary service name (generic: app, django stack: django)." },
-        "remoteDevKit.proxyMode": { "type": "string", "enum": ["bare", "coolify"], "default": "bare", "enumDescriptions": ["Kit runs its own Traefik (a plain VPS with Docker).", "Attach to an existing Coolify/Traefik proxy."], "description": "How TLS/routing is handled on the VPS." },
-        "remoteDevKit.proxyNetwork": { "type": "string", "default": "web", "description": "Docker network the proxy uses (bare: web, Coolify: coolify)." },
-        "remoteDevKit.certResolver": { "type": "string", "default": "letsencrypt", "description": "Traefik certificate resolver name." },
-        "remoteDevKit.certEntrypoint": { "type": "string", "default": "https", "description": "Traefik HTTPS entrypoint name." },
-        "remoteDevKit.acmeEmail": { "type": "string", "default": "", "description": "Let's Encrypt contact email (bare-VPS/Traefik mode)." }
+        "remoteDevKit.projectName": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Unique name for this project. Namespaces containers, volumes and routes. Defaults to the workspace folder name."
+        },
+        "remoteDevKit.appHost": {
+          "type": "string",
+          "default": "",
+          "description": "Public host for the app, e.g. myapp.dev.yourdomain.com."
+        },
+        "remoteDevKit.appPort": {
+          "type": "number",
+          "default": 8000,
+          "description": "Port your app listens on inside the container."
+        },
+        "remoteDevKit.vpsSsh": {
+          "type": "string",
+          "default": "",
+          "description": "SSH target for the VPS, e.g. root@203.0.113.10 (key-based, passwordless)."
+        },
+        "remoteDevKit.stack": {
+          "type": "string",
+          "enum": [
+            "generic",
+            "django"
+          ],
+          "default": "generic",
+          "enumDescriptions": [
+            "One web service from your ./Dockerfile (any language).",
+            "Full Cookiecutter-Django stack (postgres/redis/mailpit/celery/flower)."
+          ],
+          "description": "Which bundled stack to run."
+        },
+        "remoteDevKit.appDockerfile": {
+          "type": "string",
+          "default": "./Dockerfile",
+          "description": "Path to your Dockerfile (generic stack)."
+        },
+        "remoteDevKit.appService": {
+          "type": "string",
+          "default": "app",
+          "description": "Primary service name (generic: app, django stack: django)."
+        },
+        "remoteDevKit.proxyMode": {
+          "type": "string",
+          "enum": [
+            "bare",
+            "coolify"
+          ],
+          "default": "bare",
+          "enumDescriptions": [
+            "Kit runs its own Traefik (a plain VPS with Docker).",
+            "Attach to an existing Coolify/Traefik proxy."
+          ],
+          "description": "How TLS/routing is handled on the VPS."
+        },
+        "remoteDevKit.proxyNetwork": {
+          "type": "string",
+          "default": "web",
+          "description": "Docker network the proxy uses (bare: web, Coolify: coolify)."
+        },
+        "remoteDevKit.certResolver": {
+          "type": "string",
+          "default": "letsencrypt",
+          "description": "Traefik certificate resolver name."
+        },
+        "remoteDevKit.certEntrypoint": {
+          "type": "string",
+          "default": "https",
+          "description": "Traefik HTTPS entrypoint name."
+        },
+        "remoteDevKit.acmeEmail": {
+          "type": "string",
+          "default": "",
+          "description": "Let's Encrypt contact email (bare-VPS/Traefik mode)."
+        }
       }
     }
   },
