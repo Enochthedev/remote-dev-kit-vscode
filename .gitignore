@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.vsix
 .DS_Store
+
+# Local-only reference notes — never pushed
+docs/
