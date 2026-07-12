@@ -1,0 +1,93 @@
+# Generic remote stack WITH backing services — any language, plus Postgres + Redis.
+#
+# Same contract as docker-compose.remote.yml (your ./Dockerfile builds a web service
+# listening on ${APP_PORT}), but adds a database and a cache for apps that need them.
+#
+# Only the app is web-facing: it alone joins the `proxy` network and carries the
+# traefik labels. Postgres and Redis stay on `default` and are reachable *only* from
+# the app, under the aliases:
+#
+#     ${PROJECT_NAME}-postgres      ${PROJECT_NAME}-redis
+#
+# Those aliases matter — a shared proxy network (Coolify) usually already has a
+# service literally called `postgres`/`redis`, and an unaliased one would collide.
+# Point the app's DB_HOST / REDIS_HOST at the aliases above.
+#
+# .env.remote keys used here:
+#   APP_ENV_FILE     env file for the app container (all its runtime secrets)
+#   DB_ENV_FILE      env file for postgres (POSTGRES_USER/PASSWORD/DB)
+#   POSTGRES_IMAGE   default postgres:18-alpine — override for postgis, pgvector, …
+#   REDIS_IMAGE      default redis:7-alpine
+#   REDIS_PASSWORD   redis is password-protected; the app must send the same value
+
+networks:
+  default: {}
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-coolify}
+
+volumes:
+  postgres_data: {}
+  redis_data: {}
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ${APP_DOCKERFILE:-./Dockerfile}
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-./.env.remote.app}
+    networks:
+      - default
+      - proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.${PROJECT_NAME}-web.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-web.entrypoints=${CERT_ENTRYPOINT:-https}
+      - traefik.http.routers.${PROJECT_NAME}-web.tls=true
+      - traefik.http.routers.${PROJECT_NAME}-web.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-8000}
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    restart: unless-stopped
+    env_file:
+      - ${DB_ENV_FILE:-./.env.remote.db}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    networks:
+      default:
+        aliases:
+          - ${PROJECT_NAME}-postgres
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.remote}
+    volumes:
+      - redis_data:/data
+    networks:
+      default:
+        aliases:
+          - ${PROJECT_NAME}-redis
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}

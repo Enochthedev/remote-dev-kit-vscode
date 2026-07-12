@@ -1,0 +1,113 @@
+# RDK reaper — time-limited deployments.
+#
+# Stops a project once its TTL expires, so a dev box doesn't quietly accumulate a dozen
+# forgotten stacks. Runs once per VPS (`rdk reaper up`), independent of the proxy.
+#
+# WHY THE TIMER LIVES HERE AND NOT ON YOUR MAC
+#   A client-side timer dies the moment you shut your laptop — which is exactly when you need
+#   it. Expiry must be enforced by something that is still awake.
+#
+# WHY EXPIRY IS A FILE, NOT A CONTAINER LABEL
+#   Docker labels are immutable on a running container, so `rdk extend 2h` would have to
+#   RECREATE your containers to tell them to live longer. Instead expiry is one line in
+#   /var/lib/rdk/ttl/<project> on the VPS. Extending rewrites a file; nothing restarts.
+#
+# SECURITY — READ THIS
+#   Stopping a container needs WRITE access to the Docker socket, and socket write is root on
+#   the host. The reaper therefore never sees the socket. It talks to a socket-proxy whose
+#   allowlist is default-deny and permits exactly two calls:
+#
+#       GET  /containers/json          (list, to find the project's containers)
+#       POST /containers/<id>/stop     (stop them)
+#
+#   No create, no exec, no delete, no bind mounts. A compromised reaper cannot start a
+#   privileged container, cannot read your images, and cannot delete a volume.
+#
+#   This is why the reaper only ever STOPS. Supporting "destroy on expiry" would require
+#   DELETE on containers and volumes, and an automated process that can drop your database is
+#   not a trade worth making. `rdk down` stays a deliberate, human act.
+
+networks:
+  rdk_reaper:
+    name: rdk_reaper
+    internal: true # no route to the outside world; the proxy is reachable only from the reaper
+
+services:
+  socket-proxy:
+    image: wollomatic/socket-proxy:1
+    container_name: rdk-socket-proxy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # The image runs unprivileged, so it needs the host's docker group to open the socket.
+    # DOCKER_GID differs per host (`stat -c %g /var/run/docker.sock`); `rdk reaper up` reads it
+    # off the VPS and passes it in.
+    user: "65534:${DOCKER_GID:?rdk reaper up should have set DOCKER_GID}"
+    command:
+      - -loglevel=info
+      - -listenip=0.0.0.0
+      - -allowfrom=rdk-reaper
+      # Default-deny: any method without an -allow flag is refused outright.
+      # socket-proxy anchors these itself (^…$) — adding our own anchors yields ^^…$$, which
+      # matches nothing, and every request 403s.
+      - -allowGET=(/v[0-9.]+)?/containers/json(\?.*)?
+      - -allowPOST=(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/stop(\?.*)?
+      - -watchdoginterval=3600
+      - -stoponwatchdog
+      - -shutdowngracetime=5
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [rdk_reaper]
+
+  reaper:
+    image: curlimages/curl:latest
+    container_name: rdk-reaper
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on: [socket-proxy]
+    networks: [rdk_reaper]
+    volumes:
+      # Written by `rdk up --ttl` / `rdk extend` over SSH. Read-only here: the reaper decides
+      # nothing about when a project dies, it only enforces what you already recorded.
+      - /var/lib/rdk/ttl:/ttl:ro
+    environment:
+      API: http://socket-proxy:2375
+      INTERVAL: ${REAPER_INTERVAL:-60}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "rdk-reaper: watching /ttl every $${INTERVAL}s"
+        while true; do
+          now=$$(date +%s)
+          for f in /ttl/*; do
+            [ -e "$$f" ] || continue
+            proj=$$(basename "$$f")
+            exp=$$(tr -dc '0-9' < "$$f")
+            [ -n "$$exp" ] || continue
+            [ "$$now" -lt "$$exp" ] && continue
+
+            # Scope hard to this compose project. The box may also run Coolify; we must never
+            # touch anything we did not deploy.
+            #
+            # /containers/json lists RUNNING containers only, so once a project is stopped this
+            # comes back empty and the loop goes quiet — even though the TTL file stays (the
+            # mount is read-only by design, so the reaper cannot rewrite your schedule).
+            ids=$$(curl -sf --get "$$API/containers/json" \
+                     --data-urlencode "filters={\"label\":[\"com.docker.compose.project=$$proj\"]}" \
+                   | grep -o '"Id":"[a-f0-9]*"' | cut -d'"' -f4)
+            [ -n "$$ids" ] || continue
+
+            echo "rdk-reaper: $$proj expired ($$now >= $$exp) — stopping"
+            for id in $$ids; do
+              curl -sf -X POST "$$API/containers/$$id/stop" >/dev/null \
+                && echo "rdk-reaper:   stopped $$id" \
+                || echo "rdk-reaper:   FAILED to stop $$id"
+            done
+          done
+          sleep "$${INTERVAL}"
+        done

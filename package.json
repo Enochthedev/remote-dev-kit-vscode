@@ -2,7 +2,7 @@
   "name": "remote-dev-kit",
   "displayName": "Remote Dev Kit",
   "description": "Run and hot-reload your project on a remote VPS from VS Code — no local Docker, code stays on your machine.",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "publisher": "enochthedev",
   "author": {
     "name": "Wave",
@@ -43,64 +43,166 @@
   "contributes": {
     "commands": [
       {
-        "command": "remoteDevKit.deploy",
+        "command": "rdk.setup",
+        "title": "Set Up This Project…",
+        "category": "Remote Dev Kit",
+        "icon": "$(wand)"
+      },
+      {
+        "command": "rdk.reconfigure",
+        "title": "Reconfigure Project…",
+        "category": "Remote Dev Kit",
+        "icon": "$(wand)"
+      },
+      {
+        "command": "rdk.setupDefaults",
+        "title": "Change VPS / Domain (all projects)…",
+        "category": "Remote Dev Kit",
+        "icon": "$(server)"
+      },
+      {
+        "command": "rdk.deploy",
         "title": "Deploy",
         "category": "Remote Dev Kit",
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "remoteDevKit.watch",
+        "command": "rdk.watch",
         "title": "Watch (Hot Reload)",
         "category": "Remote Dev Kit",
         "icon": "$(eye)"
       },
       {
-        "command": "remoteDevKit.down",
-        "title": "Destroy",
+        "command": "rdk.start",
+        "title": "Start",
+        "category": "Remote Dev Kit",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rdk.stop",
+        "title": "Stop (keep data)",
+        "category": "Remote Dev Kit",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "rdk.restart",
+        "title": "Restart",
+        "category": "Remote Dev Kit",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "rdk.destroy",
+        "title": "Destroy (deletes data)",
         "category": "Remote Dev Kit",
         "icon": "$(trash)"
       },
       {
-        "command": "remoteDevKit.logs",
+        "command": "rdk.logs",
         "title": "Logs",
         "category": "Remote Dev Kit",
         "icon": "$(output)"
       },
       {
-        "command": "remoteDevKit.status",
-        "title": "Status",
+        "command": "rdk.shell",
+        "title": "Shell",
         "category": "Remote Dev Kit",
-        "icon": "$(pulse)"
+        "icon": "$(terminal)"
       },
       {
-        "command": "remoteDevKit.openInBrowser",
+        "command": "rdk.manage",
+        "title": "Run manage.py…",
+        "category": "Remote Dev Kit",
+        "icon": "$(symbol-method)"
+      },
+      {
+        "command": "rdk.open",
         "title": "Open in Browser",
         "category": "Remote Dev Kit",
         "icon": "$(globe)"
       },
       {
-        "command": "remoteDevKit.connect",
-        "title": "Connect to VPS (create context)",
+        "command": "rdk.openHost",
+        "title": "Open Host in Browser",
+        "category": "Remote Dev Kit",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "rdk.connect",
+        "title": "Connect to VPS",
         "category": "Remote Dev Kit",
         "icon": "$(plug)"
       },
       {
-        "command": "remoteDevKit.proxyUp",
-        "title": "Start Proxy (bare VPS)",
+        "command": "rdk.proxyUp",
+        "title": "Start Proxy (Traefik)",
         "category": "Remote Dev Kit",
-        "icon": "$(server)"
+        "icon": "$(server-environment)"
       },
       {
-        "command": "remoteDevKit.configure",
-        "title": "Configure…",
+        "command": "rdk.doctor",
+        "title": "Doctor (check prerequisites)",
         "category": "Remote Dev Kit",
-        "icon": "$(gear)"
+        "icon": "$(pulse)"
       },
       {
-        "command": "remoteDevKit.refresh",
+        "command": "rdk.audit",
+        "title": "Security Audit",
+        "category": "Remote Dev Kit",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "rdk.openEnv",
+        "title": "Edit .env.remote",
+        "category": "Remote Dev Kit",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "rdk.showOutput",
+        "title": "Show Output",
+        "category": "Remote Dev Kit",
+        "icon": "$(output)"
+      },
+      {
+        "command": "rdk.installDocker",
+        "title": "Install Docker CLI",
+        "category": "Remote Dev Kit",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "rdk.refresh",
         "title": "Refresh",
         "category": "Remote Dev Kit",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "rdk.addProject",
+        "title": "Add Another Project…",
+        "category": "Remote Dev Kit",
+        "icon": "$(add)"
+      },
+      {
+        "command": "rdk.setTtl",
+        "title": "Set Expiry…",
+        "category": "Remote Dev Kit",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "rdk.extendTtl",
+        "title": "Extend Expiry…",
+        "category": "Remote Dev Kit",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "rdk.clearTtl",
+        "title": "Clear Expiry",
+        "category": "Remote Dev Kit",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "rdk.reaperUp",
+        "title": "Start TTL Reaper (once per server)",
+        "category": "Remote Dev Kit",
+        "icon": "$(server-process)"
       }
     ],
     "viewsContainers": {
@@ -115,119 +217,267 @@
     "views": {
       "remoteDevKit": [
         {
-          "id": "remoteDevKitView",
+          "id": "rdkView",
           "name": "Remote Dev Kit"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "rdkView",
+        "when": "rdk.phase == no-workspace",
+        "contents": "Remote Dev Kit runs your project on a VPS — builds happen there, your code stays here.\n\nOpen a project folder to begin.\n[Open Folder](command:vscode.openFolder)"
+      },
+      {
+        "view": "rdkView",
+        "when": "rdk.phase == docker-missing",
+        "contents": "Remote Dev Kit drives the VPS's Docker daemon through your local `docker` CLI — but it isn't installed.\n\nYou don't need Docker Desktop or a local daemon. The CLI alone is enough.\n[Install Docker CLI](command:rdk.installDocker)"
+      },
+      {
+        "view": "rdkView",
+        "when": "rdk.phase == no-project",
+        "contents": "No RDK project found in this workspace.\n\nRemote Dev Kit looks for a `Dockerfile` or an existing `.env.remote`, in each workspace folder and up to two levels below it.\n\nIf your project lives deeper than that, pick its folder directly — setting up at the wrong level would write a `.env.remote` nothing reads.\n[Choose Project Folder…](command:rdk.setup)"
+      },
+      {
+        "view": "rdkView",
+        "when": "rdk.phase == not-deployable",
+        "contents": "No Dockerfile here.\n\nRemote Dev Kit builds an image on the VPS, so it needs a `Dockerfile` in this folder (or a Cookiecutter-Django layout).\n\nYou can still set it up and point it at a Dockerfile yourself.\n[Set Up Anyway](command:rdk.setup)"
+      },
+      {
+        "view": "rdkView",
+        "when": "rdk.phase == unconfigured",
+        "contents": "Deploy this project to your VPS.\n\nRemote Dev Kit will detect your stack, reuse your saved VPS, and write a `.env.remote` for you — the same file the `rdk` CLI uses.\n[Set Up This Project](command:rdk.setup)\n\nAlready have a `.env.remote`? It'll be picked up automatically."
+      }
+    ],
     "menus": {
       "view/title": [
         {
-          "command": "remoteDevKit.deploy",
-          "when": "view == remoteDevKitView",
+          "command": "rdk.deploy",
+          "when": "view == rdkView && rdk.phase != unconfigured && rdk.phase != no-workspace && rdk.phase != docker-missing",
           "group": "navigation@1"
         },
         {
-          "command": "remoteDevKit.watch",
-          "when": "view == remoteDevKitView",
+          "command": "rdk.watch",
+          "when": "view == rdkView && rdk.deployed || view == rdkView && rdk.phase == not-deployed",
           "group": "navigation@2"
         },
         {
-          "command": "remoteDevKit.refresh",
-          "when": "view == remoteDevKitView",
+          "command": "rdk.open",
+          "when": "view == rdkView && rdk.deployed",
           "group": "navigation@3"
         },
         {
-          "command": "remoteDevKit.configure",
-          "when": "view == remoteDevKitView",
-          "group": "overflow@1"
+          "command": "rdk.refresh",
+          "when": "view == rdkView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "rdk.addProject",
+          "when": "view == rdkView",
+          "group": "1_config@0"
+        },
+        {
+          "command": "rdk.reconfigure",
+          "when": "view == rdkView",
+          "group": "1_config@1"
+        },
+        {
+          "command": "rdk.setTtl",
+          "when": "view == rdkView && rdk.deployed",
+          "group": "3_ttl@1"
+        },
+        {
+          "command": "rdk.clearTtl",
+          "when": "view == rdkView && rdk.deployed",
+          "group": "3_ttl@2"
+        },
+        {
+          "command": "rdk.reaperUp",
+          "when": "view == rdkView",
+          "group": "3_ttl@3"
+        },
+        {
+          "command": "rdk.openEnv",
+          "when": "view == rdkView",
+          "group": "1_config@2"
+        },
+        {
+          "command": "rdk.setupDefaults",
+          "when": "view == rdkView",
+          "group": "1_config@3"
+        },
+        {
+          "command": "rdk.doctor",
+          "when": "view == rdkView",
+          "group": "2_diag@1"
+        },
+        {
+          "command": "rdk.audit",
+          "when": "view == rdkView",
+          "group": "2_diag@2"
+        },
+        {
+          "command": "rdk.showOutput",
+          "when": "view == rdkView",
+          "group": "2_diag@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "rdk.logs",
+          "when": "view == rdkView && viewItem == rdk.service",
+          "group": "inline@1"
+        },
+        {
+          "command": "rdk.restart",
+          "when": "view == rdkView && viewItem == rdk.service",
+          "group": "inline@2"
+        },
+        {
+          "command": "rdk.shell",
+          "when": "view == rdkView && viewItem == rdk.service",
+          "group": "1_run@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "remoteDevKit.refresh",
+          "command": "rdk.refresh",
           "when": "false"
+        },
+        {
+          "command": "rdk.openHost",
+          "when": "false"
+        },
+        {
+          "command": "rdk.installDocker",
+          "when": "false"
+        },
+        {
+          "command": "rdk.manage",
+          "when": "rdk.deployed"
+        },
+        {
+          "command": "rdk.shell",
+          "when": "rdk.deployed"
+        },
+        {
+          "command": "rdk.start",
+          "when": "rdk.phase == stopped"
+        },
+        {
+          "command": "rdk.stop",
+          "when": "rdk.deployed"
+        },
+        {
+          "command": "rdk.restart",
+          "when": "rdk.deployed"
+        },
+        {
+          "command": "rdk.destroy",
+          "when": "rdk.deployed"
         }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "rdk.getStarted",
+        "title": "Deploy to your VPS",
+        "description": "Run your project on a remote server — no local Docker, no code on the box.",
+        "steps": [
+          {
+            "id": "rdk.step.vps",
+            "title": "Point RDK at your VPS",
+            "description": "Give RDK an SSH target and a wildcard domain — once. It probes the server, finds your proxy (Coolify or none), and remembers everything for every future project.\n[Set Up VPS](command:rdk.setupDefaults)",
+            "media": {
+              "markdown": "media/walkthrough/vps.md"
+            }
+          },
+          {
+            "id": "rdk.step.project",
+            "title": "Set up this project",
+            "description": "RDK detects your stack and port from the repo, then writes a `.env.remote`. Two questions, no settings screen.\n[Set Up Project](command:rdk.setup)",
+            "media": {
+              "markdown": "media/walkthrough/project.md"
+            },
+            "completionEvents": [
+              "onCommand:rdk.setup"
+            ]
+          },
+          {
+            "id": "rdk.step.deploy",
+            "title": "Deploy and hot-reload",
+            "description": "**Deploy** builds the image on the VPS and starts it. **Watch** does that, then live-syncs your local edits into the running container.\n[Deploy](command:rdk.deploy)",
+            "media": {
+              "markdown": "media/walkthrough/deploy.md"
+            },
+            "completionEvents": [
+              "onCommand:rdk.deploy"
+            ]
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Remote Dev Kit",
       "properties": {
-        "remoteDevKit.projectName": {
+        "rdk.vpsSsh": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Unique name for this project. Namespaces containers, volumes and routes. Defaults to the workspace folder name."
+          "scope": "application",
+          "markdownDescription": "SSH target for your VPS, e.g. `root@203.0.113.10`. Must be key-based (passwordless).\n\nShared by every project — the setup wizard fills this in for you.",
+          "order": 1
         },
-        "remoteDevKit.appHost": {
+        "rdk.baseDomain": {
           "type": "string",
           "default": "",
-          "description": "Public host for the app, e.g. myapp.dev.yourdomain.com."
+          "scope": "application",
+          "markdownDescription": "Wildcard domain pointing at the VPS, e.g. `dev.yourdomain.com`. Each project is published at `<project>.<domain>`.",
+          "order": 2
         },
-        "remoteDevKit.appPort": {
-          "type": "number",
-          "default": 8000,
-          "description": "Port your app listens on inside the container."
-        },
-        "remoteDevKit.vpsSsh": {
+        "rdk.acmeEmail": {
           "type": "string",
           "default": "",
-          "description": "SSH target for the VPS, e.g. root@203.0.113.10 (key-based, passwordless)."
+          "scope": "application",
+          "markdownDescription": "Let's Encrypt contact email. Only used when RDK runs its own Traefik (a VPS with no existing proxy).",
+          "order": 3
         },
-        "remoteDevKit.stack": {
-          "type": "string",
-          "enum": [
-            "generic",
-            "django"
-          ],
-          "default": "generic",
-          "enumDescriptions": [
-            "One web service from your ./Dockerfile (any language).",
-            "Full Cookiecutter-Django stack (postgres/redis/mailpit/celery/flower)."
-          ],
-          "description": "Which bundled stack to run."
-        },
-        "remoteDevKit.appDockerfile": {
-          "type": "string",
-          "default": "./Dockerfile",
-          "description": "Path to your Dockerfile (generic stack)."
-        },
-        "remoteDevKit.appService": {
-          "type": "string",
-          "default": "app",
-          "description": "Primary service name (generic: app, django stack: django)."
-        },
-        "remoteDevKit.proxyMode": {
-          "type": "string",
-          "enum": [
-            "bare",
-            "coolify"
-          ],
-          "default": "bare",
-          "enumDescriptions": [
-            "Kit runs its own Traefik (a plain VPS with Docker).",
-            "Attach to an existing Coolify/Traefik proxy."
-          ],
-          "description": "How TLS/routing is handled on the VPS."
-        },
-        "remoteDevKit.proxyNetwork": {
+        "rdk.proxyNetwork": {
           "type": "string",
           "default": "web",
-          "description": "Docker network the proxy uses (bare: web, Coolify: coolify)."
+          "scope": "application",
+          "markdownDescription": "Docker network the proxy uses — `web` when RDK runs Traefik, `coolify` to attach to an existing Coolify proxy.\n\nDetected automatically during setup.",
+          "order": 4
         },
-        "remoteDevKit.certResolver": {
+        "rdk.certResolver": {
           "type": "string",
           "default": "letsencrypt",
-          "description": "Traefik certificate resolver name."
+          "scope": "application",
+          "markdownDescription": "Traefik certificate resolver name. Detected automatically during setup.",
+          "order": 5
         },
-        "remoteDevKit.certEntrypoint": {
+        "rdk.certEntrypoint": {
           "type": "string",
           "default": "https",
-          "description": "Traefik HTTPS entrypoint name."
+          "scope": "application",
+          "markdownDescription": "Traefik HTTPS entrypoint name. Detected automatically during setup.",
+          "order": 6
         },
-        "remoteDevKit.acmeEmail": {
-          "type": "string",
-          "default": "",
-          "description": "Let's Encrypt contact email (bare-VPS/Traefik mode)."
+        "rdk.scanDepth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 4,
+          "markdownDescription": "How many levels below each workspace folder to look for projects.\n\nA monorepo (`app/` holding `api/`, `web/`, `worker/`) keeps its projects one level down, so the default of `2` finds them. Raise it for deeper nesting; set `0` to only look at the workspace root itself.",
+          "order": 7
+        },
+        "rdk.excludeFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, …).",
+          "order": 8
         }
       }
     }
