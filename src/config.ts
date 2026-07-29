@@ -15,6 +15,8 @@ export interface RdkConfig {
   acmeEmail: string;
   certResolver: string;
   certEntrypoint: string;
+  /** The proxy's :80 entrypoint — target of the http→https redirect router. */
+  httpEntrypoint: string;
   redisPassword: string;
   /** The project's OWN compose file(s). Set = overlay mode: we add labels, we own no services. */
   baseCompose: string;
@@ -111,6 +113,7 @@ export function fromEnv(env: EnvMap, root: string): RdkConfig {
     acmeEmail: (env.ACME_EMAIL || "").trim(),
     certResolver: (env.CERT_RESOLVER || "letsencrypt").trim(),
     certEntrypoint: (env.CERT_ENTRYPOINT || "https").trim(),
+    httpEntrypoint: (env.HTTP_ENTRYPOINT || "http").trim(),
     redisPassword: (env.REDIS_PASSWORD || "").trim(),
     baseCompose: (env.BASE_COMPOSE || "").trim(),
     appServiceSet: Boolean(env.APP_SERVICE?.trim()),

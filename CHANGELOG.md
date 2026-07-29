@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1
+
+- **New icon.** The satellite mark from the RDK marketing site, teal on the site's dark
+  palette — marketplace icon, gallery banner, and activity bar now match the brand. The
+  status bar and terminal swap the old `$(rocket)` codicon for `$(radio-tower)`.
+- **http → https redirect.** The overlay and all bundled stacks add a plain-HTTP router
+  that redirects to HTTPS. Coolify's Traefik has no global redirect, so port 80 used to
+  404. Configurable via `HTTP_ENTRYPOINT` (default `http`).
+- Bundled stacks re-synced with the CLI's (redirect labels, Traefik entrypoint renamed
+  `web` → `http` to match Coolify's naming).
+
 ## 0.4.0
 
 ### Overlay mode

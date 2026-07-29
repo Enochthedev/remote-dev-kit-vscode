@@ -4,8 +4,8 @@
 # Skip this entirely if your VPS already runs a proxy (e.g. Coolify): instead set
 # PROXY_NETWORK=coolify in .env.remote and don't run `./remote proxy`.
 #
-# Entrypoint `https` + resolver `letsencrypt` are named to match the app stacks,
-# so the same labels work whether Traefik is this one or Coolify's.
+# Entrypoints `http`/`https` + resolver `letsencrypt` are named to match Coolify's
+# Traefik, so the exact same app-stack labels work in both modes.
 
 networks:
   proxy:
@@ -23,12 +23,12 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=${PROXY_NETWORK:-web}
-      - --entrypoints.web.address=:80
+      - --entrypoints.http.address=:80
       - --entrypoints.https.address=:443
-      - --entrypoints.web.http.redirections.entrypoint.to=https
-      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.http.http.redirections.entrypoint.to=https
+      - --entrypoints.http.http.redirections.entrypoint.scheme=https
       - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
-      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
       - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env.remote}
       - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
     ports:

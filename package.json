@@ -2,7 +2,7 @@
   "name": "remote-dev-kit",
   "displayName": "Remote Dev Kit",
   "description": "Run and hot-reload your project on a remote VPS from VS Code — no local Docker, code stays on your machine.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "enochthedev",
   "author": {
     "name": "Wave",
@@ -11,7 +11,7 @@
   "license": "MIT",
   "icon": "media/icon.png",
   "galleryBanner": {
-    "color": "#7C3AED",
+    "color": "#0b0e14",
     "theme": "dark"
   },
   "engines": {
@@ -210,7 +210,7 @@
         {
           "id": "remoteDevKit",
           "title": "Remote Dev Kit",
-          "icon": "media/rocket.svg"
+          "icon": "media/satellite.svg"
         }
       ]
     },

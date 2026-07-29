@@ -42,7 +42,7 @@ export function terminal(): vscode.Terminal {
   if (!term || term.exitStatus !== undefined) {
     term = vscode.window.createTerminal({
       name: "Remote Dev Kit",
-      iconPath: new vscode.ThemeIcon("rocket"),
+      iconPath: new vscode.ThemeIcon("radio-tower"),
     });
   }
   term.show();

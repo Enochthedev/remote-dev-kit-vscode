@@ -61,6 +61,12 @@ services:
       - traefik.http.routers.${PROJECT_NAME}-web.tls=true
       - traefik.http.routers.${PROJECT_NAME}-web.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.services.${PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-8000}
+      # http → https redirect (Coolify's Traefik has no global one)
+      - traefik.http.routers.${PROJECT_NAME}-http.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_NAME}-http.entrypoints=${HTTP_ENTRYPOINT:-http}
+      - traefik.http.routers.${PROJECT_NAME}-http.middlewares=${PROJECT_NAME}-redirect
+      - traefik.http.middlewares.${PROJECT_NAME}-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.${PROJECT_NAME}-redirect.redirectscheme.permanent=true
 
   postgres:
     build:
