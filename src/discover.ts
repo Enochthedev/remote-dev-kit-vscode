@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { detectProject, ProjectShape } from "./detect";
-import { envExists } from "./env";
+import { ENV_FILE, envExists } from "./env";
 
 /** Folders that never contain a project root and are expensive to walk. */
 const SKIP = new Set([
@@ -63,25 +63,51 @@ function candidate(root: string): Candidate | undefined {
 }
 
 /**
+ * Every folder that already has a .env.remote, at ANY depth.
+ *
+ * This is an exact-filename lookup against the editor's file index, so depth costs nothing —
+ * unlike the directory walk below, which has to stat its way down. Depth-limiting this was a
+ * bug: a project set up from the CLI in, say, repo/apps/personal/ sits 3 levels below the
+ * workspace root and silently never appeared in the sidebar, even while it was deployed and
+ * running. The file watcher in extension.ts is already `**​/.env.remote`; this matches it.
+ */
+async function findConfigured(skip: Set<string>): Promise<string[]> {
+  const exclude = `**/{${[...skip].join(",")}}/**`;
+  const uris = await vscode.workspace.findFiles(`**/${ENV_FILE}`, exclude);
+  return uris.map((u) => path.dirname(u.fsPath));
+}
+
+/**
  * Find every RDK project in the workspace.
  *
+ * Two passes, because the two cases have different costs:
+ *  - Already configured (has .env.remote) → found at any depth, via the file index. Missing one
+ *    of these is the worst failure: a live deployment the user can't see or control.
+ *  - Not yet configured → found by a depth-limited walk. This pass only *offers* setup, so
+ *    scanning the whole tree would be expensive for no benefit.
+ *
  * A monorepo root (ise/) holds no Dockerfile of its own — the projects are one level down
- * (ise/ise-api/). Scanning only the workspace root would report "nothing here" while a
- * perfectly good, already-deployed project sits in a subfolder.
+ * (ise/ise-api/), or further in a pnpm workspace (portfolio/apps/personal/).
  */
-export function discover(): Candidate[] {
+export async function discover(): Promise<Candidate[]> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const found = new Map<string, Candidate>();
   const depthLimit = maxDepth();
   const skip = skipped();
 
+  const configuredRoots = new Set(await findConfigured(skip));
+  for (const root of configuredRoots) {
+    const c = candidate(root);
+    if (c) found.set(root, c);
+  }
+
   const walk = (dir: string, depth: number): void => {
-    const c = candidate(dir);
-    if (c) {
-      found.set(dir, c);
-      // A configured project is a leaf: don't descend into it and pick up its own subfolders.
-      if (c.configured) return;
+    if (!found.has(dir)) {
+      const c = candidate(dir);
+      if (c) found.set(dir, c);
     }
+    // A configured project is a leaf: don't descend into it and pick up its own subfolders.
+    if (configuredRoots.has(dir)) return;
     if (depth >= depthLimit) return;
     for (const child of readDirs(dir, skip)) {
       walk(child, depth + 1);

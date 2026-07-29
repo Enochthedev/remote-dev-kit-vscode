@@ -29,7 +29,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push(status);
 
   const refresh = async (): Promise<void> => {
-    candidates = discover();
+    candidates = await discover();
 
     if (!candidates.length) {
       const phase = vscode.workspace.workspaceFolders?.length ? "no-project" : "no-workspace";
@@ -457,13 +457,13 @@ function paintStatus(item: vscode.StatusBarItem): void {
   const name = s.cfg?.projectName ?? (s.root ? path.basename(s.root) : "");
   const spec: Record<string, { icon: string; text: string; cmd: string; bg?: string }> = {
     "docker-missing": { icon: "error", text: "Docker missing", cmd: "rdk.installDocker", bg: "statusBarItem.errorBackground" },
-    unconfigured: { icon: "rocket", text: `Set up ${name}`, cmd: "rdk.setup" },
+    unconfigured: { icon: "radio-tower", text: `Set up ${name}`, cmd: "rdk.setup" },
     incomplete: { icon: "warning", text: `${name}: finish setup`, cmd: "rdk.setup", bg: "statusBarItem.warningBackground" },
     disconnected: { icon: "debug-disconnect", text: `${name}: connect`, cmd: "rdk.connect" },
     "not-deployed": { icon: "cloud-upload", text: `Deploy ${name}`, cmd: "rdk.deploy" },
     stopped: { icon: "primitive-square", text: `${name}: stopped`, cmd: "rdk.start" },
     partial: { icon: "warning", text: `${name}: degraded`, cmd: "rdk.logs", bg: "statusBarItem.warningBackground" },
-    running: { icon: "rocket", text: name, cmd: "rdk.open" },
+    running: { icon: "radio-tower", text: name, cmd: "rdk.open" },
   };
 
   const it = spec[s.phase];

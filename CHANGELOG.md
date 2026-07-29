@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.2
+
+- **Projects set up from the CLI now always appear in the sidebar.** Discovery used a single
+  depth-limited walk (`rdk.scanDepth`, default 2) for every project, so a folder configured
+  with `rdk init` deeper than that — e.g. a pnpm workspace app at `repo/apps/personal/` —
+  stayed invisible even while it was deployed and running. Folders that already have a
+  `.env.remote` are now found at any depth via the editor's file index, which matches the
+  `**/.env.remote` file watcher the extension was already using. `rdk.scanDepth` still bounds
+  the search for *not-yet-configured* folders, where scanning the whole tree would be
+  expensive for no benefit.
+
 ## 0.4.1
 
 - **New icon.** The satellite mark from the RDK marketing site, teal on the site's dark
