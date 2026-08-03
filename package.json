@@ -2,7 +2,7 @@
   "name": "remote-dev-kit",
   "displayName": "Remote Dev Kit",
   "description": "Run and hot-reload your project on a remote VPS from VS Code. No local Docker, and your code stays on your machine.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "wavestudio",
   "author": {
     "name": "Wave",
@@ -44,19 +44,19 @@
     "commands": [
       {
         "command": "rdk.setup",
-        "title": "Set Up This Project\u2026",
+        "title": "Set Up This Project…",
         "category": "Remote Dev Kit",
         "icon": "$(wand)"
       },
       {
         "command": "rdk.reconfigure",
-        "title": "Reconfigure Project\u2026",
+        "title": "Reconfigure Project…",
         "category": "Remote Dev Kit",
         "icon": "$(wand)"
       },
       {
         "command": "rdk.setupDefaults",
-        "title": "Change VPS / Domain (all projects)\u2026",
+        "title": "Change VPS / Domain (all projects)…",
         "category": "Remote Dev Kit",
         "icon": "$(server)"
       },
@@ -110,7 +110,7 @@
       },
       {
         "command": "rdk.manage",
-        "title": "Run manage.py\u2026",
+        "title": "Run manage.py…",
         "category": "Remote Dev Kit",
         "icon": "$(symbol-method)"
       },
@@ -176,19 +176,19 @@
       },
       {
         "command": "rdk.addProject",
-        "title": "Add Another Project\u2026",
+        "title": "Add Another Project…",
         "category": "Remote Dev Kit",
         "icon": "$(add)"
       },
       {
         "command": "rdk.setTtl",
-        "title": "Set Expiry\u2026",
+        "title": "Set Expiry…",
         "category": "Remote Dev Kit",
         "icon": "$(clock)"
       },
       {
         "command": "rdk.extendTtl",
-        "title": "Extend Expiry\u2026",
+        "title": "Extend Expiry…",
         "category": "Remote Dev Kit",
         "icon": "$(clock)"
       },
@@ -236,7 +236,7 @@
       {
         "view": "rdkView",
         "when": "rdk.phase == no-project",
-        "contents": "No RDK project found in this workspace.\n\nRemote Dev Kit looks for a `Dockerfile` or an existing `.env.remote`, in each workspace folder and up to two levels below it.\n\nIf your project lives deeper than that, pick its folder directly. Setting up at the wrong level writes a `.env.remote` that nothing reads.\n[Choose Project Folder\u2026](command:rdk.setup)"
+        "contents": "No RDK project found in this workspace.\n\nRemote Dev Kit looks for a `Dockerfile` or an existing `.env.remote`, in each workspace folder and up to two levels below it.\n\nIf your project lives deeper than that, pick its folder directly. Setting up at the wrong level writes a `.env.remote` that nothing reads.\n[Choose Project Folder…](command:rdk.setup)"
       },
       {
         "view": "rdkView",
@@ -476,7 +476,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, \u2026).",
+          "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, …).",
           "order": 8
         }
       }
