@@ -1,9 +1,9 @@
 {
   "name": "remote-dev-kit",
   "displayName": "Remote Dev Kit",
-  "description": "Run and hot-reload your project on a remote VPS from VS Code — no local Docker, code stays on your machine.",
+  "description": "Run and hot-reload your project on a remote VPS from VS Code. No local Docker, and your code stays on your machine.",
   "version": "0.4.2",
-  "publisher": "enochthedev",
+  "publisher": "wavestudio",
   "author": {
     "name": "Wave",
     "url": "https://github.com/Enochthedev"
@@ -44,19 +44,19 @@
     "commands": [
       {
         "command": "rdk.setup",
-        "title": "Set Up This Project…",
+        "title": "Set Up This Project\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(wand)"
       },
       {
         "command": "rdk.reconfigure",
-        "title": "Reconfigure Project…",
+        "title": "Reconfigure Project\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(wand)"
       },
       {
         "command": "rdk.setupDefaults",
-        "title": "Change VPS / Domain (all projects)…",
+        "title": "Change VPS / Domain (all projects)\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(server)"
       },
@@ -110,7 +110,7 @@
       },
       {
         "command": "rdk.manage",
-        "title": "Run manage.py…",
+        "title": "Run manage.py\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(symbol-method)"
       },
@@ -176,19 +176,19 @@
       },
       {
         "command": "rdk.addProject",
-        "title": "Add Another Project…",
+        "title": "Add Another Project\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(add)"
       },
       {
         "command": "rdk.setTtl",
-        "title": "Set Expiry…",
+        "title": "Set Expiry\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(clock)"
       },
       {
         "command": "rdk.extendTtl",
-        "title": "Extend Expiry…",
+        "title": "Extend Expiry\u2026",
         "category": "Remote Dev Kit",
         "icon": "$(clock)"
       },
@@ -226,17 +226,17 @@
       {
         "view": "rdkView",
         "when": "rdk.phase == no-workspace",
-        "contents": "Remote Dev Kit runs your project on a VPS — builds happen there, your code stays here.\n\nOpen a project folder to begin.\n[Open Folder](command:vscode.openFolder)"
+        "contents": "Remote Dev Kit runs your project on a VPS. Builds happen there, your code stays here.\n\nOpen a project folder to begin.\n[Open Folder](command:vscode.openFolder)"
       },
       {
         "view": "rdkView",
         "when": "rdk.phase == docker-missing",
-        "contents": "Remote Dev Kit drives the VPS's Docker daemon through your local `docker` CLI — but it isn't installed.\n\nYou don't need Docker Desktop or a local daemon. The CLI alone is enough.\n[Install Docker CLI](command:rdk.installDocker)"
+        "contents": "Remote Dev Kit drives the VPS's Docker daemon through your local `docker` CLI, which isn't installed.\n\nYou don't need Docker Desktop or a local daemon. The CLI alone is enough.\n[Install Docker CLI](command:rdk.installDocker)"
       },
       {
         "view": "rdkView",
         "when": "rdk.phase == no-project",
-        "contents": "No RDK project found in this workspace.\n\nRemote Dev Kit looks for a `Dockerfile` or an existing `.env.remote`, in each workspace folder and up to two levels below it.\n\nIf your project lives deeper than that, pick its folder directly — setting up at the wrong level would write a `.env.remote` nothing reads.\n[Choose Project Folder…](command:rdk.setup)"
+        "contents": "No RDK project found in this workspace.\n\nRemote Dev Kit looks for a `Dockerfile` or an existing `.env.remote`, in each workspace folder and up to two levels below it.\n\nIf your project lives deeper than that, pick its folder directly. Setting up at the wrong level writes a `.env.remote` that nothing reads.\n[Choose Project Folder\u2026](command:rdk.setup)"
       },
       {
         "view": "rdkView",
@@ -246,7 +246,7 @@
       {
         "view": "rdkView",
         "when": "rdk.phase == unconfigured",
-        "contents": "Deploy this project to your VPS.\n\nRemote Dev Kit will detect your stack, reuse your saved VPS, and write a `.env.remote` for you — the same file the `rdk` CLI uses.\n[Set Up This Project](command:rdk.setup)\n\nAlready have a `.env.remote`? It'll be picked up automatically."
+        "contents": "Deploy this project to your VPS.\n\nRemote Dev Kit will detect your stack, reuse your saved VPS, and write a `.env.remote` for you: the same file the `rdk` CLI uses.\n[Set Up This Project](command:rdk.setup)\n\nAlready have a `.env.remote`? It'll be picked up automatically."
       }
     ],
     "menus": {
@@ -382,12 +382,12 @@
       {
         "id": "rdk.getStarted",
         "title": "Deploy to your VPS",
-        "description": "Run your project on a remote server — no local Docker, no code on the box.",
+        "description": "Run your project on a remote server. No local Docker, no code on the box.",
         "steps": [
           {
             "id": "rdk.step.vps",
             "title": "Point RDK at your VPS",
-            "description": "Give RDK an SSH target and a wildcard domain — once. It probes the server, finds your proxy (Coolify or none), and remembers everything for every future project.\n[Set Up VPS](command:rdk.setupDefaults)",
+            "description": "Give RDK an SSH target and a wildcard domain, once. It probes the server, finds your proxy (Coolify or none), and remembers everything for every future project.\n[Set Up VPS](command:rdk.setupDefaults)",
             "media": {
               "markdown": "media/walkthrough/vps.md"
             }
@@ -424,7 +424,7 @@
           "type": "string",
           "default": "",
           "scope": "application",
-          "markdownDescription": "SSH target for your VPS, e.g. `root@203.0.113.10`. Must be key-based (passwordless).\n\nShared by every project — the setup wizard fills this in for you.",
+          "markdownDescription": "SSH target for your VPS, e.g. `root@203.0.113.10`. Must be key-based (passwordless).\n\nShared by every project. The setup wizard fills this in for you.",
           "order": 1
         },
         "rdk.baseDomain": {
@@ -445,7 +445,7 @@
           "type": "string",
           "default": "web",
           "scope": "application",
-          "markdownDescription": "Docker network the proxy uses — `web` when RDK runs Traefik, `coolify` to attach to an existing Coolify proxy.\n\nDetected automatically during setup.",
+          "markdownDescription": "Docker network the proxy uses: `web` when RDK runs Traefik, `coolify` to attach to an existing Coolify proxy.\n\nDetected automatically during setup.",
           "order": 4
         },
         "rdk.certResolver": {
@@ -476,7 +476,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, …).",
+          "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, \u2026).",
           "order": 8
         }
       }

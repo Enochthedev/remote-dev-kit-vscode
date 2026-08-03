@@ -8,7 +8,7 @@ The sidebar shows what's actually happening:
 
 ```
 ● myapp                    running
-  🌐 myapp.dev.yourdomain.com
+  https://myapp.dev.yourdomain.com
   ── Services ──
   ● django                 Up 4 minutes
   ● postgres               Up 4 minutes

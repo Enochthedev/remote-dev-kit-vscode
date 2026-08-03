@@ -2,9 +2,9 @@
 
 ## 0.4.2
 
-- **Projects set up from the CLI now always appear in the sidebar.** Discovery used a single
+- Projects set up from the CLI now always appear in the sidebar. Discovery used a single
   depth-limited walk (`rdk.scanDepth`, default 2) for every project, so a folder configured
-  with `rdk init` deeper than that — e.g. a pnpm workspace app at `repo/apps/personal/` —
+  with `rdk init` deeper than that (say a pnpm workspace app at `repo/apps/personal/`)
   stayed invisible even while it was deployed and running. Folders that already have a
   `.env.remote` are now found at any depth via the editor's file index, which matches the
   `**/.env.remote` file watcher the extension was already using. `rdk.scanDepth` still bounds
@@ -13,12 +13,11 @@
 
 ## 0.4.1
 
-- **New icon.** The satellite mark from the RDK marketing site, teal on the site's dark
-  palette — marketplace icon, gallery banner, and activity bar now match the brand. The
+- New icon. The satellite mark from the RDK marketing site, teal on the site's dark
+  palette. Marketplace icon, gallery banner and activity bar now match the brand. The
   status bar and terminal swap the old `$(rocket)` codicon for `$(radio-tower)`.
-- **http → https redirect.** The overlay and all bundled stacks add a plain-HTTP router
-  that redirects to HTTPS. Coolify's Traefik has no global redirect, so port 80 used to
-  404. Configurable via `HTTP_ENTRYPOINT` (default `http`).
+- http → https redirect. The overlay and all bundled stacks add a plain-HTTP router that
+  redirects to HTTPS. Coolify's Traefik has no global redirect, so port 80 used to 404. Configurable via `HTTP_ENTRYPOINT` (default `http`).
 - Bundled stacks re-synced with the CLI's (redirect labels, Traefik entrypoint renamed
   `web` → `http` to match Coolify's naming).
 
@@ -47,14 +46,14 @@
 
 ### Monorepos
 
-- **Add another project…** in the panel. RDK is set up in `app/-b` and you want `app/-c`:
+- Add another project… in the panel. RDK is set up in `app/-b` and you want `app/-c`:
   pick the sibling folder, no re-opening the workspace.
 - `rdk.scanDepth` (default `2`) controls how far below each workspace folder RDK looks, and
   `rdk.excludeFolders` skips names you don't want scanned.
 
 ## 0.3.0
 
-- **Multi-project workspaces.** The extension scans each workspace folder and two levels below
+- Multi-project workspaces. The extension scans each workspace folder and two levels below
   it, so opening a monorepo root finds the projects nested inside. Each gets its own row, its
   own status, and its own actions — a click under one project can never act on another.
 - The active project follows your open editor. When a command is ambiguous, RDK asks instead of
@@ -70,7 +69,7 @@
   asking you to invent a secret.
 - A missing `REDIS_PASSWORD` is now reported as *setup unfinished* instead of failing at
   compose time — the stack guards it with `:?` and Redis refuses to boot without it.
-- **Destroy** now warns you'll lose the Postgres database on that stack too, not just Django.
+- Destroy now warns you'll lose the Postgres database on that stack too, not just Django.
 
 ## 0.2.0
 
@@ -94,7 +93,7 @@ Setup and day-to-day use no longer go through the Settings screen.
 
 - The tree is now **state-aware**: it knows whether you're unconfigured, disconnected, not
   deployed, stopped, degraded or running, and shows only the actions that apply.
-- **Live per-service status** with health dots. Click a service for its logs; right-click to
+- Live per-service status with health dots. Click a service for its logs; right-click to
   restart or open a shell in it.
 - Links to every URL the stack exposes (app, plus Mailpit and Flower on the Django stack).
 - Welcome screens for the empty states, plus a first-run walkthrough.
@@ -102,10 +101,10 @@ Setup and day-to-day use no longer go through the Settings screen.
 
 ### Actions
 
-- **Deploy auto-connects.** Creating the docker context is no longer a hidden prerequisite you
+- Deploy auto-connects. Creating the docker context is no longer a hidden prerequisite you
   had to know about; the "context does not exist" failure is gone.
 - Added **Stop** (keeps volumes) as the safe counterpart to Destroy.
-- **Destroy now confirms**, and names what you lose (on the Django stack: the Postgres database).
+- Destroy now confirms, and names what you lose (on the Django stack: the Postgres database).
   It offers Stop instead. It used to be a single unconfirmed click that wiped volumes.
 - Added **Shell**, **Restart**, **manage.py…** (Django), **Doctor** and **Security audit**
   (delegated to the `rdk` CLI when present).

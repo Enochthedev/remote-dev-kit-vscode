@@ -100,7 +100,7 @@ export async function watch(ctx: vscode.ExtensionContext, state: RdkState): Prom
   const w = ["docker", ...compose(ctx, cfg, root, "watch")];
   const q = (a: string[]) => a.map((s) => `'${s.replace(/'/g, `'\\''`)}'`).join(" ");
   t.sendText(`cd '${root.replace(/'/g, `'\\''`)}'`);
-  t.sendText(`${q(up)} && echo "👀 syncing edits → VPS (Ctrl-C to stop)…" && ${q(w)}`);
+  t.sendText(`${q(up)} && echo "Syncing edits to VPS. Ctrl-C to stop." && ${q(w)}`);
 }
 
 export function logs(ctx: vscode.ExtensionContext, state: RdkState, service?: string): void {
