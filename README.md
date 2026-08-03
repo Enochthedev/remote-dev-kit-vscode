@@ -3,8 +3,7 @@
 Run and hot-reload your project on a remote VPS, from inside VS Code. No local Docker, no
 containers on your laptop, and your code never leaves your machine.
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/wavestudio.remote-dev-kit)](https://marketplace.visualstudio.com/items?itemName=wavestudio.remote-dev-kit)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/wavestudio.remote-dev-kit)](https://marketplace.visualstudio.com/items?itemName=wavestudio.remote-dev-kit)
+[Install from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=wavestudio.remote-dev-kit)
 
 ---
 
