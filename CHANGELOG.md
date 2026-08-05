@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1
+
+- **Fixes auto-activation in large workspaces, broken by 0.5.0.** The new activation event was
+  `workspaceContains:**/.env.remote`. VS Code splits these: a value with no glob characters is a
+  direct existence check per workspace folder and costs nothing, while anything containing `*`
+  runs a file search capped at seven seconds. A `**/` search over a large monorepo overruns that
+  budget, and when it does the extension simply never activates — no status bar, no expiry
+  warnings, until you open the panel by hand. Activation is now a free root check plus two
+  bounded-depth patterns, matching the default `rdk.scanDepth` of 2. Discovery is unchanged and
+  still finds configured projects at any depth once the extension is running.
+
 ## 0.5.0
 
 Startup and polling. The extension used to activate in every window and hold a fixed 15-second
