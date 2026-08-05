@@ -5,20 +5,54 @@ import { appUrl, getDefaults } from "./config";
 import { checkPrereqs, detectProject } from "./detect";
 import { activeRoot as pickActive, Candidate, discover } from "./discover";
 import { ENV_FILE } from "./env";
-import { output } from "./exec";
+import { forgetBins, output } from "./exec";
 import * as run from "./runner";
-import { phaseLabel, publishContext, RdkState, resolveState } from "./state";
+import {
+  fingerprint,
+  forgetContext,
+  forgetTtl,
+  phaseLabel,
+  publishContext,
+  RdkState,
+  resolveState,
+} from "./state";
 import { CmdArg, RdkTree } from "./tree";
 import { clearTtl, formatLeft, pickDuration, readTtl, setTtl, shouldWarn } from "./ttl";
 import { openEnvFile, setupDefaults, setupProject } from "./wizard";
 
-const POLL_MS = 15_000;
+/**
+ * Poll cadence.
+ *
+ * The old code ran a flat 15s `setInterval` for as long as the view was visible, and each tick
+ * probed every project over SSH. A window left open all afternoon on a stable deployment spent
+ * the whole afternoon asking a question whose answer had not changed since lunch. Now the
+ * interval starts tight and doubles while nothing moves, and any real event snaps it back.
+ */
+const POLL_MIN_MS = 15_000;
+const POLL_MAX_MS = 240_000;
+/** Debounce for burst events — writing .env.remote fires create and change back to back. */
+const SETTLE_MS = 400;
 const DISMISSED = "rdk.setupDismissed";
 
 let projects: RdkState[] = [];
 let candidates: Candidate[] = [];
 let active: string | undefined;
 let hasRdkCli = false;
+
+interface RefreshOpts {
+  /** Re-walk the workspace for projects. Defaults to true; polls skip it. */
+  rediscover?: boolean;
+  /** Read only what's on disk — no docker, no SSH. */
+  localOnly?: boolean;
+}
+
+/** Union of two refresh intents, always resolving towards doing more work rather than less. */
+function merge(a: RefreshOpts, b: RefreshOpts): RefreshOpts {
+  return {
+    rediscover: a.rediscover !== false || b.rediscover !== false,
+    localOnly: a.localOnly === true && b.localOnly === true,
+  };
+}
 
 export async function activate(ctx: vscode.ExtensionContext) {
   const tree = new RdkTree();
@@ -28,27 +62,106 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   ctx.subscriptions.push(status);
 
-  const refresh = async (): Promise<void> => {
+  /** Cheap, disk-only discovery. Re-walking the tree on every poll bought nothing. */
+  const rediscover = async (): Promise<void> => {
     candidates = await discover();
+    active = candidates.length ? pickActive(candidates) : undefined;
+  };
 
+  let lastPrint = "";
+  let running: Promise<void> | undefined;
+  let pending: RefreshOpts | undefined;
+
+  const probe = async (localOnly: boolean): Promise<void> => {
     if (!candidates.length) {
       const phase = vscode.workspace.workspaceFolders?.length ? "no-project" : "no-workspace";
       projects = [{ phase, missing: [], services: [] }];
-      active = undefined;
     } else {
+      const before = new Map(projects.map((p) => [p.root, p]));
       // Resolve every project in parallel — each one is an independent SSH/docker probe.
       projects = await Promise.all(
-        candidates.map((c) => resolveState(c.root, (cfg, root) => run.composeFilesFor(ctx, cfg, root))),
+        candidates.map((c) => resolveState(c.root, { localOnly, previous: before.get(c.root) })),
       );
-      active = pickActive(candidates);
     }
 
     const cur = current();
     publishContext(cur, candidates.length);
-    tree.setStates(projects, active);
     paintStatus(status);
     paintView(view);
+
+    // Rebuilding the tree means allocating every row again. Only do it when a row would differ.
+    const print = fingerprint(projects);
+    if (print !== lastPrint) {
+      lastPrint = print;
+      tree.setStates(projects, active);
+    }
     void checkExpiries();
+  };
+
+  /**
+   * Run a refresh, never two at once.
+   *
+   * With a bare interval a probe slower than the interval stacked on the next one, and whichever
+   * finished last won — so a slow VPS could overwrite fresh state with stale state while piling
+   * up ssh processes. Concurrent callers now join the in-flight run, and a request that arrives
+   * mid-run schedules exactly one follow-up.
+   */
+  const refresh = (opts: RefreshOpts = {}): Promise<void> => {
+    if (running) {
+      // Keep the more thorough of the two intents. A wake that wants the network must not be
+      // downgraded to local-only just because it landed during the first paint.
+      pending = merge(pending ?? opts, opts);
+      return running;
+    }
+    running = (async () => {
+      try {
+        if (opts.rediscover !== false) await rediscover();
+        await probe(opts.localOnly === true);
+      } finally {
+        running = undefined;
+      }
+      const next = pending;
+      pending = undefined;
+      if (next) await refresh(next);
+    })();
+    return running;
+  };
+
+  // --- scheduling ---------------------------------------------------------
+  let timer: NodeJS.Timeout | undefined;
+  let delay = POLL_MIN_MS;
+  let settle: NodeJS.Timeout | undefined;
+
+  /** Poll only when the panel is on screen AND this window has focus — a background window is idle. */
+  const shouldPoll = () => view.visible && vscode.window.state.focused;
+
+  const stop = () => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+  };
+
+  const schedule = () => {
+    stop();
+    if (!shouldPoll()) return;
+    timer = setTimeout(tick, delay);
+  };
+
+  const tick = async () => {
+    if (!shouldPoll()) return; // don't reschedule; focus/visibility will restart us
+    const before = lastPrint;
+    await refresh({ rediscover: false });
+    // Back off while the world holds still; snap back the moment it doesn't.
+    delay = lastPrint === before ? Math.min(delay * 2, POLL_MAX_MS) : POLL_MIN_MS;
+    schedule();
+  };
+
+  /** Something happened that could have changed state: probe now and restart at full cadence. */
+  const wake = (opts: RefreshOpts = {}) => {
+    delay = POLL_MIN_MS;
+    if (settle) clearTimeout(settle);
+    settle = setTimeout(() => {
+      void refresh(opts).then(schedule);
+    }, SETTLE_MS);
   };
 
   checkPrereqs().then((p) => {
@@ -58,39 +171,32 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const watcher = vscode.workspace.createFileSystemWatcher(`**/${ENV_FILE}`);
   ctx.subscriptions.push(
     watcher,
-    watcher.onDidCreate(refresh),
-    watcher.onDidChange(refresh),
-    watcher.onDidDelete(refresh),
-    vscode.workspace.onDidChangeWorkspaceFolders(refresh),
+    watcher.onDidCreate(() => wake()),
+    watcher.onDidChange(() => wake()),
+    watcher.onDidDelete(() => wake()),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => wake()),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("rdk")) refresh();
+      if (e.affectsConfiguration("rdk")) wake();
     }),
     // Following the active editor is what makes "the project I'm looking at" the default target.
     vscode.window.onDidChangeActiveTextEditor(() => {
       const next = pickActive(candidates);
-      if (next !== active) {
-        active = next;
-        const cur = current();
-        publishContext(cur, candidates.length);
-        tree.setStates(projects, active);
-        paintStatus(status);
-      }
+      if (next === active) return;
+      active = next;
+      publishContext(current(), candidates.length);
+      tree.setStates(projects, active);
+      paintStatus(status);
     }),
-  );
-
-  let timer: NodeJS.Timeout | undefined;
-  const poll = () => {
-    clearInterval(timer!);
-    if (view.visible) timer = setInterval(refresh, POLL_MS);
-  };
-  ctx.subscriptions.push(
+    vscode.window.onDidChangeWindowState((s) => {
+      if (s.focused) wake({ rediscover: false });
+      else stop();
+    }),
     view.onDidChangeVisibility(() => {
-      poll();
-      if (view.visible) refresh();
+      if (view.visible) wake({ rediscover: false });
+      else stop();
     }),
-    { dispose: () => clearInterval(timer!) },
+    { dispose: () => { stop(); if (settle) clearTimeout(settle); } },
   );
-  poll();
 
   const reg = (id: string, cb: (...a: any[]) => any) =>
     ctx.subscriptions.push(vscode.commands.registerCommand(id, cb));
@@ -104,6 +210,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
     const root = arg?.root ?? active;
     const hit = projects.find((p) => p.root === root);
     if (hit) return hit;
+    // A row that named a root we no longer know about is stale — the folder was removed or
+    // renamed under us. Falling back to "the only project" here would silently redirect the
+    // click onto a different deployment, which for Destroy is unrecoverable. Ask instead.
+    if (arg?.root) return pickProject();
     if (projects.length === 1) return projects[0];
     return pickProject();
   };
@@ -141,7 +251,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
       return;
     }
     await fn(s);
-    await refresh();
+    // Deploy and Watch only queue a command in the terminal, so probing the moment `fn` returns
+    // always read the world as it was before the action. Wake instead: it reprobes after the
+    // debounce and, because the state will have moved, holds the fast cadence while it settles.
+    wake({ rediscover: false });
   };
 
   reg("rdk.setup", async (arg?: CmdArg) => {
@@ -228,6 +341,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     } else {
       vscode.window.showErrorMessage(`Couldn't set the expiry on ${s.cfg.vpsSsh}.`);
     }
+    forgetTtl(s.cfg.projectName); // we just moved it; the cached countdown is now a lie
     await refresh();
   });
 
@@ -240,6 +354,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`${s.cfg.projectName} now stops in ${formatLeft(secs)}.`);
       warned.delete(s.root!);
     }
+    forgetTtl(s.cfg.projectName);
     await refresh();
   });
 
@@ -250,6 +365,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`${s.cfg.projectName} runs until you stop it.`);
       warned.delete(s.root!);
     }
+    forgetTtl(s.cfg.projectName);
     await refresh();
   });
 
@@ -268,14 +384,37 @@ export async function activate(ctx: vscode.ExtensionContext) {
     await refresh();
   });
 
-  reg("rdk.installDocker", () =>
-    vscode.env.openExternal(vscode.Uri.parse("https://docs.docker.com/engine/install/")),
-  );
+  reg("rdk.installDocker", () => {
+    forgetBins(); // they're going off to install it; don't hold the "missing" answer against them
+    return vscode.env.openExternal(vscode.Uri.parse("https://docs.docker.com/engine/install/"));
+  });
   reg("rdk.showOutput", () => output().show());
-  reg("rdk.refresh", refresh);
+  reg("rdk.refresh", () => {
+    // An explicit refresh means "ignore everything you think you know".
+    forgetBins();
+    forgetContext();
+    forgetTtl();
+    delay = POLL_MIN_MS;
+    return refresh();
+  });
 
-  await refresh();
-  await offerSetup(ctx);
+  /*
+   * Activation does no network work.
+   *
+   * The extension used to await a full probe here — discovery, then a docker context inspect, a
+   * compose ps over SSH and two more SSH calls per project — before activation resolved. On a
+   * sleeping VPS that was tens of seconds of the window's startup budget, spent on a panel the
+   * user might never open. Now the first paint is disk-only and instant; the VPS is asked once
+   * the window is actually in front of someone.
+   */
+  await refresh({ localOnly: true });
+
+  const warmUp = setTimeout(() => {
+    if (vscode.window.state.focused) void refresh({ rediscover: false }).then(schedule);
+  }, 3_000);
+  ctx.subscriptions.push({ dispose: () => clearTimeout(warmUp) });
+
+  void offerSetup(ctx);
 }
 
 /**
@@ -458,6 +597,7 @@ function paintStatus(item: vscode.StatusBarItem): void {
   const spec: Record<string, { icon: string; text: string; cmd: string; bg?: string }> = {
     "docker-missing": { icon: "error", text: "Docker missing", cmd: "rdk.installDocker", bg: "statusBarItem.errorBackground" },
     unconfigured: { icon: "radio-tower", text: `Set up ${name}`, cmd: "rdk.setup" },
+    checking: { icon: "sync~spin", text: name, cmd: "rdk.refresh" },
     incomplete: { icon: "warning", text: `${name}: finish setup`, cmd: "rdk.setup", bg: "statusBarItem.warningBackground" },
     disconnected: { icon: "debug-disconnect", text: `${name}: connect`, cmd: "rdk.connect" },
     "not-deployed": { icon: "cloud-upload", text: `Deploy ${name}`, cmd: "rdk.deploy" },

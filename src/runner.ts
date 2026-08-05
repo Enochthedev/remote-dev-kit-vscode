@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { appUrl, baseFiles, contextName, extraHosts, isOverlay, proxyMode, RdkConfig, stack } from "./config";
-import { logResult, output, run, sendToTerminal } from "./exec";
+import { logResult, output, runDocker, sendToTerminal } from "./exec";
 import { renderOverlay } from "./overlay";
-import { composeArgs, RdkState } from "./state";
+import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
 
 export function stackFile(ctx: vscode.ExtensionContext, cfg: RdkConfig): string {
   return ctx.asAbsolutePath(path.join("stacks", cfg.composeFile));
@@ -41,12 +41,10 @@ function fail(label: string, res: { stderr: string; stdout: string }): void {
 /** Create the docker context if it doesn't exist. Deploy calls this itself, so it's never a manual step. */
 export async function ensureConnected(cfg: RdkConfig): Promise<boolean> {
   const ctxName = contextName(cfg);
-  if ((await run("docker", ["context", "inspect", ctxName], { timeoutMs: 10_000 })).code === 0) {
-    return true;
-  }
+  if (await contextExists(ctxName)) return true;
 
   const args = ["context", "create", ctxName, "--docker", `host=ssh://${cfg.vpsSsh}`];
-  const res = await run("docker", args, { timeoutMs: 20_000 });
+  const res = await runDocker(args, { timeoutMs: 20_000 });
   logResult("connect", ["docker", ...args], res);
 
   if (res.code !== 0) {
@@ -161,7 +159,7 @@ export async function restart(ctx: vscode.ExtensionContext, state: RdkState, ser
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Restarting ${service ?? cfg.projectName}…` },
     async () => {
-      const res = await run("docker", args, { cwd: root, timeoutMs: 120_000 });
+      const res = await runDocker(args, { cwd: root, timeoutMs: 120_000 });
       logResult("restart", ["docker", ...args], res);
       if (res.code !== 0) fail("Restart failed", res);
     },
@@ -177,7 +175,7 @@ export async function start(ctx: vscode.ExtensionContext, state: RdkState): Prom
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Starting ${cfg.projectName}…` },
     async () => {
-      const res = await run("docker", args, { cwd: root, timeoutMs: 120_000 });
+      const res = await runDocker(args, { cwd: root, timeoutMs: 120_000 });
       logResult("start", ["docker", ...args], res);
       if (res.code !== 0) fail("Start failed", res);
     },
@@ -193,7 +191,7 @@ export async function stop(ctx: vscode.ExtensionContext, state: RdkState): Promi
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Stopping ${cfg.projectName}…` },
     async () => {
-      const res = await run("docker", args, { cwd: root, timeoutMs: 120_000 });
+      const res = await runDocker(args, { cwd: root, timeoutMs: 120_000 });
       logResult("stop", ["docker", ...args], res);
       if (res.code !== 0) fail("Stop failed", res);
     },
@@ -231,10 +229,13 @@ export async function destroy(ctx: vscode.ExtensionContext, state: RdkState): Pr
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Destroying ${cfg.projectName}…` },
     async () => {
-      const res = await run("docker", args, { cwd: root, timeoutMs: 300_000 });
+      const res = await runDocker(args, { cwd: root, timeoutMs: 300_000 });
       logResult("destroy", ["docker", ...args], res);
       if (res.code !== 0) fail("Destroy failed", res);
-      else vscode.window.showInformationMessage(`Destroyed ${cfg.projectName}.`);
+      else {
+        forgetTtl(cfg.projectName); // the reaper's file outlives the deployment; don't show a stale countdown
+        vscode.window.showInformationMessage(`Destroyed ${cfg.projectName}.`);
+      }
     },
   );
 }
@@ -255,7 +256,7 @@ async function proxyRunning(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: 
     "ps",
     "-q",
   ];
-  const res = await run("docker", args, { cwd: root, timeoutMs: 30_000 });
+  const res = await runDocker(args, { cwd: root, timeoutMs: 30_000 });
   return res.code === 0 && res.stdout.trim().length > 0;
 }
 
@@ -266,7 +267,7 @@ export async function proxyUp(ctx: vscode.ExtensionContext, cfg: RdkConfig, root
     { location: vscode.ProgressLocation.Notification, title: "Starting Traefik on the VPS…" },
     async () => {
       const net = ["--context", contextName(cfg), "network", "create", cfg.proxyNetwork];
-      await run("docker", net, { timeoutMs: 20_000 }); // already-exists is fine
+      await runDocker(net, { timeoutMs: 20_000 }); // already-exists is fine
 
       const args = [
         "--context",
@@ -283,7 +284,7 @@ export async function proxyUp(ctx: vscode.ExtensionContext, cfg: RdkConfig, root
         "up",
         "-d",
       ];
-      const res = await run("docker", args, { cwd: root, timeoutMs: 180_000 });
+      const res = await runDocker(args, { cwd: root, timeoutMs: 180_000 });
       logResult("proxy up", ["docker", ...args], res);
       if (res.code !== 0) fail("Couldn't start the proxy", res);
       else vscode.window.showInformationMessage("Traefik is up on ports 80/443.");

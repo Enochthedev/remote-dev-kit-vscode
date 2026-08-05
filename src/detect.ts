@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { run, which } from "./exec";
+import { run, sshOpts, which } from "./exec";
 
 export interface ProjectShape {
   /** Can this folder actually be built and deployed? (i.e. is there a Dockerfile we can use) */
@@ -66,8 +66,35 @@ function exposedPort(root: string, rel: string): number | undefined {
   return undefined;
 }
 
+/**
+ * Memo for detectProject, keyed on the folder's own mtime.
+ *
+ * Detection is four-plus filesystem hits per folder, and discovery runs it across every folder in
+ * the scan depth. A directory's mtime changes whenever an entry is added or removed in it, so a
+ * Dockerfile appearing invalidates the entry that cares — one stat replaces the whole probe.
+ */
+const shapes = new Map<string, { mtimeMs: number; shape: ProjectShape }>();
+
+function dirStamp(root: string): number {
+  try {
+    return fs.statSync(root).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
 /** Infer stack, service, Dockerfile and port from what's on disk. */
 export function detectProject(root: string): ProjectShape {
+  const mtimeMs = dirStamp(root);
+  const hit = shapes.get(root);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.shape;
+
+  const shape = probeProject(root);
+  shapes.set(root, { mtimeMs, shape });
+  return shape;
+}
+
+function probeProject(root: string): ProjectShape {
   const hasManage = exists(root, "manage.py");
   const hasDjangoDockerfile = exists(root, DJANGO_DOCKERFILE);
   const hasRootDockerfile = exists(root, "Dockerfile");
@@ -141,11 +168,14 @@ export interface VpsProbe {
   error?: string;
 }
 
-const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new"];
-
 /**
  * SSH in once and read the VPS's actual proxy setup, so the user never has to know what
  * a "cert resolver" is. Falls back to bare-Traefik defaults when nothing is detected.
+ *
+ * One connection, not four. The old version ran reachability, the docker check, the network
+ * list and the proxy inspect as separate `ssh` invocations, each paying a full handshake — on a
+ * VPS a continent away that was most of the wizard's wall-clock time. The script is delimiter-
+ * separated so a failure in a later section still leaves the earlier answers readable.
  */
 export async function probeVps(vpsSsh: string): Promise<VpsProbe> {
   const base: VpsProbe = {
@@ -158,40 +188,41 @@ export async function probeVps(vpsSsh: string): Promise<VpsProbe> {
     certEntrypoint: "https",
   };
 
-  const hello = await run("ssh", [...SSH_OPTS, vpsSsh, "echo rdk-ok"], { timeoutMs: 20_000 });
-  if (hello.code !== 0 || !hello.stdout.includes("rdk-ok")) {
-    return { ...base, error: (hello.stderr || hello.stdout).trim() || "SSH connection failed" };
+  const script = [
+    "echo rdk-ok",
+    "echo ---",
+    "command -v docker >/dev/null && echo yes",
+    "echo ---",
+    "docker network ls --format '{{.Name}}' 2>/dev/null",
+    "echo ---",
+    "docker inspect coolify-proxy --format '{{join .Args \" \"}}' 2>/dev/null || true",
+  ].join("; ");
+
+  const res = await run("ssh", [...sshOpts(8), vpsSsh, script], { timeoutMs: 25_000, maxBuffer: 256 * 1024 });
+  const [hello = "", dockerOut = "", netsOut = "", proxyArgs = ""] = res.stdout.split("---");
+
+  if (!hello.includes("rdk-ok")) {
+    return { ...base, error: (res.stderr || res.stdout).trim() || "SSH connection failed" };
   }
   base.reachable = true;
   base.passwordless = true;
 
-  const docker = await run("ssh", [...SSH_OPTS, vpsSsh, "command -v docker >/dev/null && echo yes"], {
-    timeoutMs: 20_000,
-  });
-  base.hasDocker = docker.stdout.includes("yes");
+  base.hasDocker = dockerOut.includes("yes");
   if (!base.hasDocker) {
     return { ...base, error: "Docker is not installed on the VPS" };
   }
 
-  const nets = await run("ssh", [...SSH_OPTS, vpsSsh, "docker network ls --format '{{.Name}}'"], {
-    timeoutMs: 20_000,
-  });
-  const networks = nets.stdout.split(/\r?\n/).map((n) => n.trim());
+  const networks = netsOut.split(/\r?\n/).map((n) => n.trim());
 
   if (networks.includes("coolify")) {
     base.proxyMode = "coolify";
     base.proxyNetwork = "coolify";
 
     // Read the real resolver/entrypoint names off the running proxy rather than guessing.
-    const args = await run(
-      "ssh",
-      [...SSH_OPTS, vpsSsh, "docker inspect coolify-proxy --format '{{join .Args \" \"}}' 2>/dev/null || true"],
-      { timeoutMs: 20_000 },
-    );
-    const resolver = args.stdout.match(/certificatesresolvers\.([A-Za-z0-9_-]+)\.acme/)?.[1];
+    const resolver = proxyArgs.match(/certificatesresolvers\.([A-Za-z0-9_-]+)\.acme/)?.[1];
     if (resolver) base.certResolver = resolver;
 
-    const entry = args.stdout.match(/entrypoints\.([A-Za-z0-9_-]+)\.address=:443/)?.[1];
+    const entry = proxyArgs.match(/entrypoints\.([A-Za-z0-9_-]+)\.address=:443/)?.[1];
     if (entry) base.certEntrypoint = entry;
   } else if (networks.includes("web")) {
     base.proxyMode = "bare";

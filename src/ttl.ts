@@ -1,17 +1,36 @@
 import * as vscode from "vscode";
-import { contextName, RdkConfig } from "./config";
-import { run } from "./exec";
+import { RdkConfig } from "./config";
+import { run, sshOpts } from "./exec";
 
-const SSH = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"];
+const SSH = sshOpts(10);
 const TTL_DIR = "/var/lib/rdk/ttl";
 
 export interface Ttl {
-  /** Absolute expiry, epoch seconds. */
+  /** Absolute expiry, epoch seconds — on the VPS clock. */
   expiresAt: number;
   secondsLeft: number;
   /** Is anything actually enforcing this? A TTL nobody enforces is worse than none. */
   reaperRunning: boolean;
+  /** VPS clock minus this machine's clock, so the countdown can be advanced locally. */
+  skew: number;
+  /** Local epoch seconds when this was last read from the VPS. */
+  readAt: number;
 }
+
+/**
+ * Advance a cached expiry using the local clock instead of asking the VPS again.
+ *
+ * An expiry is a countdown against a fixed instant: once we know `expiresAt` and how far the
+ * VPS clock sits from ours, every later tick is arithmetic. Re-reading it over SSH on every poll
+ * bought nothing but latency and a second round-trip per project.
+ */
+export function projectTtl(ttl: Ttl): Ttl {
+  const nowOnVps = Math.floor(Date.now() / 1000) + ttl.skew;
+  return { ...ttl, secondsLeft: ttl.expiresAt - nowOnVps };
+}
+
+/** How long a cached expiry stays trustworthy before we re-read it (someone may have changed it on the box). */
+export const TTL_REFRESH_MS = 5 * 60_000;
 
 /** "90m" | "4h" | "2d" -> seconds. Mirrors _ttl_secs in bin/rdk. */
 export function parseDuration(d: string): number | undefined {
@@ -41,23 +60,26 @@ export function formatLeft(seconds: number): string {
   return `${m}m`;
 }
 
-async function reaperRunning(cfg: RdkConfig): Promise<boolean> {
-  const res = await run("docker", ["--context", contextName(cfg), "ps", "-q", "--filter", "name=rdk-reaper"], {
-    timeoutMs: 15_000,
-  });
-  return res.code === 0 && res.stdout.trim().length > 0;
-}
-
-/** Read the expiry the reaper will act on. Undefined = no expiry; runs until stopped. */
+/**
+ * Read the expiry the reaper will act on. Undefined = no expiry; runs until stopped.
+ *
+ * One SSH round-trip for all three facts. The reaper check used to be a second, separate
+ * `docker --context` call — which itself tunnels over SSH — doubling the cost of every poll to
+ * answer a question the same shell was already positioned to answer.
+ */
 export async function readTtl(cfg: RdkConfig): Promise<Ttl | undefined> {
-  const res = await run(
-    "ssh",
-    [...SSH, cfg.vpsSsh, `cat ${TTL_DIR}/${cfg.projectName} 2>/dev/null; echo ---; date +%s`],
-    { timeoutMs: 20_000 },
-  );
+  const script = [
+    `cat ${TTL_DIR}/${cfg.projectName} 2>/dev/null`,
+    "echo ---",
+    "date +%s",
+    "echo ---",
+    "docker ps -q --filter name=rdk-reaper 2>/dev/null | head -n1",
+  ].join("; ");
+
+  const res = await run("ssh", [...SSH, cfg.vpsSsh, script], { timeoutMs: 20_000, maxBuffer: 64 * 1024 });
   if (res.code !== 0) return undefined;
 
-  const [expRaw, nowRaw] = res.stdout.split("---");
+  const [expRaw, nowRaw, reaperRaw] = res.stdout.split("---");
   const expiresAt = Number((expRaw ?? "").replace(/\D/g, ""));
   const now = Number((nowRaw ?? "").replace(/\D/g, ""));
   if (!expiresAt || !now) return undefined;
@@ -65,7 +87,9 @@ export async function readTtl(cfg: RdkConfig): Promise<Ttl | undefined> {
   return {
     expiresAt,
     secondsLeft: expiresAt - now,
-    reaperRunning: await reaperRunning(cfg),
+    reaperRunning: (reaperRaw ?? "").trim().length > 0,
+    skew: now - Math.floor(Date.now() / 1000),
+    readAt: Math.floor(Date.now() / 1000),
   };
 }
 
@@ -81,7 +105,7 @@ export async function setTtl(cfg: RdkConfig, seconds: number): Promise<boolean> 
       cfg.vpsSsh,
       `mkdir -p ${TTL_DIR} && echo $(( $(date +%s) + ${seconds} )) > ${TTL_DIR}/${cfg.projectName}`,
     ],
-    { timeoutMs: 20_000 },
+    { timeoutMs: 20_000, maxBuffer: 64 * 1024 },
   );
   return res.code === 0;
 }
@@ -89,6 +113,7 @@ export async function setTtl(cfg: RdkConfig, seconds: number): Promise<boolean> 
 export async function clearTtl(cfg: RdkConfig): Promise<boolean> {
   const res = await run("ssh", [...SSH, cfg.vpsSsh, `rm -f ${TTL_DIR}/${cfg.projectName}`], {
     timeoutMs: 20_000,
+    maxBuffer: 64 * 1024,
   });
   return res.code === 0;
 }

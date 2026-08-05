@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.5.0
+
+Startup and polling. The extension used to activate in every window and hold a fixed 15-second
+SSH poll open for as long as its panel was visible. This release makes it lazy and quiet.
+
+### Startup
+
+- **The extension no longer loads in windows that don't need it.** Activation was
+  `onStartupFinished` — every VS Code window, every project, RDK or not. It's now
+  `workspaceContains:**/.env.remote`, plus the implicit activation VS Code does when you open the
+  panel or run a command. The activity bar icon is unchanged, so a new project is still one click
+  away; what's gone is the background load in windows that have nothing to do with RDK.
+  The one trade-off: a workspace with a Dockerfile but no `.env.remote` no longer raises an
+  unprompted "deploy this?" toast at startup. Open the panel and it offers setup as before.
+- **Activation does no network work.** It used to `await` a full probe — discovery, then a
+  `docker context inspect`, a `docker compose ps` over SSH and two more SSH calls per project —
+  before activation resolved. Against a sleeping VPS that was tens of seconds of the window's
+  startup budget spent on a panel you might never open. The first paint is now disk-only and
+  instant; projects show `Checking…` and the VPS is asked ~3s later, only if the window has focus.
+
+### Polling
+
+- **The poll backs off.** 15s while things are moving, doubling to a 4-minute ceiling while
+  nothing changes. Any real event — a file write, a command, the window regaining focus —
+  snaps it back to 15s.
+- **Polling stops when you're not looking.** Previously the only condition was panel visibility,
+  so a background window with the panel open kept SSHing to your VPS all day. It now also
+  requires the window to have focus.
+- **A slow probe can't stack.** There was no in-flight guard: on a slow link, probes overlapped
+  and whichever finished last won, so fresh state could be overwritten by stale state while ssh
+  processes piled up. Concurrent refreshes now join the running one.
+- **Fewer round-trips per poll.** Status came from `docker compose ps`, which reads, merges and
+  interpolates every compose file before answering — and in overlay mode regenerated the overlay
+  on disk each time. It's now a single `docker ps` filtered by the compose project label.
+  The expiry read and its reaper check were two connections; they're one. Between reads the
+  countdown advances against the local clock instead of asking the VPS again.
+- **SSH connections are multiplexed** (`ControlMaster`, 60s persist), so repeat calls skip the
+  handshake. The VPS setup probe went from four connections to one.
+- **`which docker` is resolved once per session**, not once per project per poll.
+- **The tree only rebuilds when a row would actually differ**, instead of reallocating every
+  node every 15 seconds.
+
+### Fixes
+
+- **"Docker CLI not found" with Docker installed.** VS Code launched from Finder or the Dock
+  hands the extension host a minimal `PATH`, so a working Homebrew install reported as missing.
+  RDK now falls back to the usual install locations (Homebrew, Docker Desktop, Rancher Desktop).
+- **A running project could collapse to "Not deployed".** Any `ps` failure that wasn't a
+  recognised connection error was read as "no containers". A single flaky probe replaced a
+  healthy tree with a Deploy button. Unrecognised failures now keep the last known state.
+- **A stale tree row could act on the wrong project.** If a row named a folder that had since
+  been removed or renamed, the command fell through to "the only project" — silently
+  redirecting the click onto a different deployment, which for Destroy is unrecoverable.
+  It now asks which project you meant.
+- **`compose run` containers no longer appear as phantom services.** A `manage.py migrate` in
+  flight could show up as an extra row and drag the project into "degraded".
+- **Deploy and Watch no longer re-probe too early.** Both only queue a command in the terminal,
+  so the refresh that followed always read the world as it was before the action.
+- Setting, extending or clearing an expiry now invalidates the cached countdown immediately.
+
 ## 0.4.2
 
 - Projects set up from the CLI now always appear in the sidebar. Discovery used a single

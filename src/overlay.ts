@@ -61,9 +61,19 @@ export function renderOverlay(ctx: vscode.ExtensionContext, cfg: RdkConfig, root
   }
 
   const dir = path.join(ctx.globalStorageUri.fsPath, "overlay", cfg.projectName);
-  fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "overlay.yml");
-  fs.writeFileSync(file, lines.join("\n") + "\n", "utf8");
+  const body = lines.join("\n") + "\n";
+
+  // Write only on a real change. This used to run on every status poll — a mkdir and a full
+  // rewrite every fifteen seconds, per project, for a file whose contents almost never move.
+  try {
+    if (fs.readFileSync(file, "utf8") === body) return file;
+  } catch {
+    /* missing or unreadable — fall through and write it */
+  }
+
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, body, "utf8");
   return file;
 }
 

@@ -71,6 +71,8 @@ function phaseIcon(phase: Phase): vscode.ThemeIcon {
       return YELLOW;
     case "stopped":
       return GREY;
+    case "checking":
+      return new vscode.ThemeIcon("sync~spin");
     case "incomplete":
     case "docker-missing":
       return new vscode.ThemeIcon("warning");
@@ -168,6 +170,16 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
             command: "rdk.installDocker",
             description: "brew install docker",
           }),
+        ];
+
+      case "checking":
+        // Shown for the moment between activation and the first answer from the VPS. Every
+        // action here is safe to offer: they all connect on demand if they need to.
+        return [
+          ...this.header(s, single),
+          new Node("Checking the VPS…", { icon: "sync~spin", description: s.cfg?.vpsSsh }),
+          new Node("Deploy", { icon: "cloud-upload", command: "rdk.deploy", root: s.root }),
+          ...this.manage(s),
         ];
 
       case "incomplete":
