@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.2
+
+Windows. Setup didn't work there at all; it does now, and nothing changes on macOS or Linux.
+
+- **"Copy SSH key…" works on every OS.** It used to type `ssh-copy-id` into a terminal. Windows'
+  OpenSSH doesn't ship `ssh-copy-id`, so the button failed with "not recognized". The extension
+  now does the job itself with plain `ssh`: it creates an `id_ed25519` key if you don't have one,
+  then appends it to `~/.ssh/authorized_keys` on the VPS after you type the password once. Running
+  it twice doesn't add the key twice.
+- **The VPS check no longer fails on Windows with a working key.** Every SSH call asked for
+  connection sharing (`ControlMaster`), which Windows' OpenSSH doesn't support: it fails with
+  `getsockname failed: Not a socket`. Setup then reported "Can't reach the VPS", sending you to
+  the key button for a problem the key wasn't causing. Windows now connects without sharing.
+- **Docker is found on Windows.** The extension looked for CLIs with `/usr/bin/env which`, which
+  doesn't exist on Windows, so Docker always read as "not installed". It now uses `where` and
+  picks `docker.exe` rather than the extensionless shim Docker Desktop also puts on `PATH`.
+- **Logs, shell, deploy and watch run in PowerShell on Windows.** Commands were quoted for a POSIX
+  shell, which neither PowerShell nor cmd understands. On Windows, RDK terminals now always open
+  PowerShell, with quoting and `&&`-style chaining written for it.
+
+## 0.5.1
+
+- **Fixes auto-activation in large workspaces, broken by 0.5.0.** The new activation event was
+  `workspaceContains:**/.env.remote`. VS Code splits these: a value with no glob characters is a
+  direct existence check per workspace folder and costs nothing, while anything containing `*`
+  runs a file search capped at seven seconds. A `**/` search over a large monorepo overruns that
+  budget, and when it does the extension simply never activates — no status bar, no expiry
+  warnings, until you open the panel by hand. Activation is now a free root check plus two
+  bounded-depth patterns, matching the default `rdk.scanDepth` of 2. Discovery is unchanged and
+  still finds configured projects at any depth once the extension is running.
+
 ## 0.5.0
 
 Startup and polling. The extension used to activate in every window and hold a fixed 15-second

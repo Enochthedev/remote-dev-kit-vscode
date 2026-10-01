@@ -44,9 +44,18 @@ export async function ok(file: string, args: string[], opts: RunOpts = {}): Prom
   return (await run(file, args, opts)).code === 0;
 }
 
+export const isWindows = process.platform === "win32";
+
 /** Where a CLI lives when the extension host's PATH is too thin to find it. */
 function fallbacks(bin: string): string[] {
   const home = os.homedir();
+  if (isWindows) {
+    const pf = process.env.ProgramFiles ?? "C:\\Program Files";
+    return [
+      path.join(pf, "Docker", "Docker", "resources", "bin", `${bin}.exe`),
+      path.join(home, ".rd", "bin", `${bin}.exe`), // Rancher Desktop
+    ];
+  }
   return [
     `/opt/homebrew/bin/${bin}`,
     `/usr/local/bin/${bin}`,
@@ -68,6 +77,16 @@ function executable(p: string): boolean {
 }
 
 async function resolveBin(bin: string): Promise<string | undefined> {
+  if (isWindows) {
+    // There is no /usr/bin/env on Windows, so the POSIX lookup below always failed and every
+    // CLI read as "not installed". `where` can list an extensionless file first (e.g. a bash
+    // script), which Windows can't launch directly, so prefer a real executable.
+    const res = await run("where", [bin], { timeoutMs: 5_000, maxBuffer: 64 * 1024 });
+    const hits = res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const hit = hits.find((h) => /\.(exe|cmd|bat|com)$/i.test(h)) ?? hits[0];
+    if (res.code === 0 && hit && fs.existsSync(hit)) return hit;
+    return fallbacks(bin).find((p) => fs.existsSync(p));
+  }
   const res = await run("/usr/bin/env", ["which", bin], { timeoutMs: 5_000, maxBuffer: 64 * 1024 });
   const hit = res.stdout.split(/\r?\n/)[0]?.trim();
   if (res.code === 0 && hit && executable(hit)) return hit;
@@ -121,13 +140,12 @@ export async function runDocker(args: string[], opts: RunOpts = {}): Promise<Exe
  * the window goes quiet, so this doesn't leave a process parked forever.
  */
 export function sshOpts(connectTimeout = 8): string[] {
+  const base = ["-o", "BatchMode=yes", "-o", `ConnectTimeout=${connectTimeout}`, "-o", "StrictHostKeyChecking=accept-new"];
+  // Windows' bundled OpenSSH has no connection multiplexing: asking for a ControlMaster makes
+  // every call fail, which surfaced as "can't reach the VPS" even with a working key.
+  if (isWindows) return base;
   return [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    `ConnectTimeout=${connectTimeout}`,
-    "-o",
-    "StrictHostKeyChecking=accept-new",
+    ...base,
     "-o",
     "ControlMaster=auto",
     // %C hashes host/port/user into 32 chars, keeping the socket path under the ~104 byte limit.
@@ -138,31 +156,57 @@ export function sshOpts(connectTimeout = 8): string[] {
   ];
 }
 
+/**
+ * Create a terminal whose shell we know. Command lines are quoted for one specific shell, and
+ * the Windows default could be PowerShell, cmd or Git Bash, and POSIX quoting breaks in two of
+ * them. On Windows we pin PowerShell, which ships with every supported version. Elsewhere the
+ * default shell stays, since it's the one that sets up the user's PATH.
+ */
+export function createShellTerminal(opts: { name: string; iconPath?: vscode.ThemeIcon }): vscode.Terminal {
+  if (!isWindows) return vscode.window.createTerminal(opts);
+  return vscode.window.createTerminal({ ...opts, shellPath: "powershell.exe", shellArgs: ["-NoLogo"] });
+}
+
 let term: vscode.Terminal | undefined;
 
 /** The single reusable RDK terminal — for interactive/streaming commands (logs, watch, shell). */
 export function terminal(): vscode.Terminal {
   if (!term || term.exitStatus !== undefined) {
-    term = vscode.window.createTerminal({
-      name: "Remote Dev Kit",
-      iconPath: new vscode.ThemeIcon("radio-tower"),
-    });
+    term = createShellTerminal({ name: "Remote Dev Kit", iconPath: new vscode.ThemeIcon("radio-tower") });
   }
   term.show();
   return term;
 }
 
+/** Quote one argument for the shell createShellTerminal starts. */
 export function shellQuote(s: string): string {
+  if (isWindows) return `'${s.replace(/'/g, "''")}'`;
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** An argv array as one command line. PowerShell treats a leading quoted string as a value, not a command, hence `&`. */
+export function commandLine(argv: string[]): string {
+  const line = argv.map(shellQuote).join(" ");
+  return isWindows ? `& ${line}` : line;
+}
+
+export function cdLine(dir: string): string {
+  return isWindows ? `Set-Location -LiteralPath ${shellQuote(dir)}` : `cd ${shellQuote(dir)}`;
+}
+
+/** Run each line only if the previous one succeeded. Windows PowerShell 5 has no `&&`. */
+export function andThen(lines: string[]): string {
+  if (!isWindows) return lines.join(" && ");
+  return lines.reduceRight((rest, line) => `${line}; if ($LASTEXITCODE -eq 0) { ${rest} }`);
 }
 
 /** Send an argv array to the RDK terminal as a properly quoted command line. */
 export function sendToTerminal(argv: string[], cwd?: string): void {
   const t = terminal();
   if (cwd) {
-    t.sendText(`cd ${shellQuote(cwd)}`);
+    t.sendText(cdLine(cwd));
   }
-  t.sendText(argv.map(shellQuote).join(" "));
+  t.sendText(commandLine(argv));
 }
 
 let channel: vscode.OutputChannel | undefined;
