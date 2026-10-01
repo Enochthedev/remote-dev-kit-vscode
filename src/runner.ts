@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { appUrl, baseFiles, contextName, extraHosts, isOverlay, proxyMode, RdkConfig, stack } from "./config";
-import { logResult, output, runDocker, sendToTerminal } from "./exec";
+import { andThen, cdLine, commandLine, createShellTerminal, logResult, output, runDocker, sendToTerminal } from "./exec";
 import { renderOverlay } from "./overlay";
 import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
 
@@ -92,13 +92,12 @@ export async function watch(ctx: vscode.ExtensionContext, state: RdkState): Prom
   if (!cfg || !root) return;
   if (!(await ensureConnected(cfg))) return;
 
-  const t = vscode.window.createTerminal({ name: "RDK: watch", iconPath: new vscode.ThemeIcon("eye") });
+  const t = createShellTerminal({ name: "RDK: watch", iconPath: new vscode.ThemeIcon("eye") });
   t.show();
   const up = ["docker", ...compose(ctx, cfg, root, "up", "-d", "--build")];
   const w = ["docker", ...compose(ctx, cfg, root, "watch")];
-  const q = (a: string[]) => a.map((s) => `'${s.replace(/'/g, `'\\''`)}'`).join(" ");
-  t.sendText(`cd '${root.replace(/'/g, `'\\''`)}'`);
-  t.sendText(`${q(up)} && echo "Syncing edits to VPS. Ctrl-C to stop." && ${q(w)}`);
+  t.sendText(cdLine(root));
+  t.sendText(andThen([commandLine(up), `echo "Syncing edits to VPS. Ctrl-C to stop."`, commandLine(w)]));
 }
 
 export function logs(ctx: vscode.ExtensionContext, state: RdkState, service?: string): void {

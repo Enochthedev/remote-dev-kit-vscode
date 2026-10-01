@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { randomBytes } from "crypto";
+import { run } from "./exec";
 import { Defaults, getDefaults, loadConfig, saveDefaults } from "./config";
 import { composeServices, detectBaseCompose, detectProject, probeVps, slug } from "./detect";
 import { ensureIgnored, envExists, writeEnv } from "./env";
@@ -38,6 +41,65 @@ async function ask(opts: {
   return v?.trim();
 }
 
+const KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
+const PUBKEY_RE = /^([a-z0-9@.-]+) ([A-Za-z0-9+/=]+)/;
+
+/**
+ * Put this machine's public key on the VPS: what `ssh-copy-id` does, without needing it.
+ *
+ * `ssh-copy-id` is a shell script that macOS and most Linux distros ship but Windows' OpenSSH
+ * does not, so the old "Copy SSH key…" button failed there with "not recognized". This does the
+ * same job with plain `ssh`, which every platform has: generate a key if there isn't one, then
+ * append it to authorized_keys over a password login. The terminal runs ssh directly rather
+ * than through a shell, so nothing depends on which shell the user has.
+ */
+async function copySshKey(vpsSsh: string): Promise<void> {
+  const dir = path.join(os.homedir(), ".ssh");
+  let name = KEY_NAMES.find((n) => fs.existsSync(path.join(dir, `${n}.pub`)));
+
+  if (!name) {
+    const pick = await vscode.window.showInformationMessage(
+      `This machine has no SSH key yet. Create one in ${dir}?`,
+      "Create key",
+      "Cancel",
+    );
+    if (pick !== "Create key") return;
+    fs.mkdirSync(dir, { recursive: true });
+    name = "id_ed25519";
+    const res = await run("ssh-keygen", ["-t", "ed25519", "-N", "", "-q", "-f", path.join(dir, name)]);
+    if (res.code !== 0) {
+      vscode.window.showErrorMessage(`ssh-keygen failed: ${(res.stderr || res.stdout).trim() || `exit ${res.code}`}`);
+      return;
+    }
+  }
+
+  // Only the key type and body go over the wire. The comment is free text and would need quoting.
+  const m = PUBKEY_RE.exec(fs.readFileSync(path.join(dir, `${name}.pub`), "utf8").trim());
+  if (!m) {
+    vscode.window.showErrorMessage(`${path.join(dir, `${name}.pub`)} doesn't look like an SSH public key.`);
+    return;
+  }
+  const key = `${m[1]} ${m[2]}`;
+  const script = [
+    "umask 077",
+    "mkdir -p ~/.ssh",
+    "touch ~/.ssh/authorized_keys",
+    // A file without a trailing newline would glue our key onto the end of the last one.
+    "(tail -c1 ~/.ssh/authorized_keys | grep -q . && echo >> ~/.ssh/authorized_keys || true)",
+    `(grep -qF '${m[2]}' ~/.ssh/authorized_keys || echo '${key}' >> ~/.ssh/authorized_keys)`,
+    "echo",
+    "echo RDK: key installed. Close this terminal and run Set up again.",
+  ].join(" && ");
+
+  const t = vscode.window.createTerminal({
+    name: "rdk: copy SSH key",
+    shellPath: "ssh",
+    shellArgs: ["-o", "StrictHostKeyChecking=accept-new", vpsSsh, script],
+  });
+  t.show();
+  vscode.window.showInformationMessage(`Enter the password for ${vpsSsh} in the terminal. Run setup again once the key is installed.`);
+}
+
 /**
  * Ask for the machine-level values once, ever. Everything here is shared by every project,
  * so a second project never sees these steps again.
@@ -72,9 +134,7 @@ export async function setupDefaults(force = false): Promise<Defaults | undefined
       "Continue anyway",
     );
     if (pick === "Copy SSH key…") {
-      const t = vscode.window.createTerminal({ name: "rdk: ssh-copy-id" });
-      t.show();
-      t.sendText(`ssh-copy-id ${vpsSsh}`);
+      await copySshKey(vpsSsh);
       return undefined;
     }
     if (pick !== "Continue anyway") return undefined;
