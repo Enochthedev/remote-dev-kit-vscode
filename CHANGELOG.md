@@ -23,6 +23,14 @@ before overwriting.
 - **Deploying over an unrecorded deployment asks once.** Deploys from the CLI or older versions
   have no record of who made them. The first Deploy from this version asks before replacing one,
   then records it.
+- **A fresh clone knows it's already deployed.** `.env.remote` is git-ignored, so a second machine
+  or a new clone used to see a blank "Deploy this project". If this machine already has your VPS
+  set up, the panel asks it once and, when this repo is running there, shows "Already deployed on
+  your VPS" with a Join option instead.
+- **Monorepos: packages don't mistake each other's deployments for their own.** Packages share a
+  git remote, so the stamp also records the folder within the repo. Setup and the sidebar only
+  treat a deployment as this project's when both match, and Deploy refuses to replace a sibling
+  package that happens to use the same project name.
 - **The sidebar says whose code is live.** A "Deployed from …" row shows the device, commit and
   age. "Your code differs" appears when your commit isn't the one running, and clicking it deploys
   yours. "Different repo on the VPS" warns when two unrelated projects share a project name.

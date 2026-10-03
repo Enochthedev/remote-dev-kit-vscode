@@ -2,10 +2,10 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { appUrl, baseFiles, contextName, extraHosts, isOverlay, proxyMode, RdkConfig, stack } from "./config";
 import { andThen, cdLine, commandLine, createShellTerminal, logResult, output, runDocker, sendToTerminal } from "./exec";
-import { describeOwner, isMine, localGit, renderStamp, shortCommit } from "./devices";
+import { describeOwner, isMine, localGit, otherProject, renderStamp, shortCommit } from "./devices";
 import { openEnvFile } from "./wizard";
 import { renderOverlay } from "./overlay";
-import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
+import { composeArgs, contextExists, forgetTtl, RdkState, resolveState } from "./state";
 
 export function stackFile(ctx: vscode.ExtensionContext, cfg: RdkConfig): string {
   return ctx.asAbsolutePath(path.join("stacks", cfg.composeFile));
@@ -43,24 +43,31 @@ async function stamped(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: strin
  * deploy from here silently swaps out whatever the other machine was running. Our own deploys
  * and unstamped ones (the CLI, older versions) go ahead without asking.
  */
-async function confirmTakeover(state: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
+async function confirmTakeover(shown: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
+  if (!shown.root) return true;
+  // Decide on what the VPS says now, not on what the panel last showed. A machine that has just
+  // joined has no docker context yet, so its panel reads "not connected" with no services. Trusting
+  // that skipped this check on exactly the deploy it exists for: a second machine's first one.
+  // Callers connect first, so this read reaches the VPS.
+  const state = await resolveState(shown.root, { previous: shown });
   const owner = state.owner;
-  if (!state.root || !state.services.length) return true; // nothing running to replace
-  const local = await localGit(state.root, true);
+  if (!state.services.length) return true; // nothing running to replace
+  const local = await localGit(shown.root, true);
   const name = state.cfg?.projectName;
 
   // Same name, different repo: not a newer version of this project but another project entirely.
   // There's no "replace it" here, even for our own device. One of the two has to be renamed.
-  if (owner?.repo && local?.repo && owner.repo !== local.repo) {
+  const other = otherProject(owner, local);
+  if (owner && local && other) {
     const pick = await vscode.window.showErrorMessage(
-      `"${name}" on the VPS is a different project: ${owner.repo}.`,
+      `"${name}" on the VPS is a different project: ${other}.`,
       {
         modal: true,
-        detail: `It was deployed from ${describeOwner(owner)}. This folder is ${local.repo}. Deploying would replace it.\n\nGive this project its own name: change PROJECT_NAME in .env.remote.`,
+        detail: `It was deployed from ${describeOwner(owner)}. This folder is ${local.repo}${local.path ? `/${local.path}` : ""}. Deploying would replace it.\n\nGive this project its own name: change PROJECT_NAME in .env.remote.`,
       },
       "Edit .env.remote",
     );
-    if (pick) await openEnvFile(state.root);
+    if (pick) await openEnvFile(shown.root);
     return false;
   }
 

@@ -24,6 +24,8 @@ export const LABEL = {
   deviceName: "rdk.device-name",
   sshUser: "rdk.ssh-user",
   repo: "rdk.repo",
+  /** The folder within the repo. Monorepo packages share a remote; this tells them apart. */
+  path: "rdk.path",
   commit: "rdk.commit",
   dirty: "rdk.dirty",
   at: "rdk.deployed-at",
@@ -36,6 +38,8 @@ export interface Owner {
   deviceName: string;
   sshUser: string;
   repo: string;
+  /** Folder within the repo, `""` at its root. Undefined on stamps from before it was recorded. */
+  path?: string;
   commit: string;
   dirty: boolean;
   /** Unix seconds. */
@@ -45,6 +49,8 @@ export interface Owner {
 export interface LocalGit {
   /** Normalised origin URL, e.g. `github.com/enochthedev/stakey`. Empty when there's no origin. */
   repo: string;
+  /** This folder within the repo (`git rev-parse --show-prefix`), `""` at its root. */
+  path: string;
   commit: string;
   dirty: boolean;
 }
@@ -100,11 +106,12 @@ export async function localGit(root: string, fresh = false): Promise<LocalGit | 
   if (!fresh && hit && Date.now() - hit.at < GIT_TTL_MS) return hit.value;
 
   const opts = { cwd: root, timeoutMs: 5_000, maxBuffer: 256 * 1024 };
-  const [head, status, origin] = await Promise.all([
+  const [head, status, origin, prefix] = await Promise.all([
     run("git", ["rev-parse", "--short=12", "HEAD"], opts),
     // Untracked files count: the image is built from the working tree, so they ship too.
     run("git", ["status", "--porcelain"], opts),
     run("git", ["remote", "get-url", "origin"], opts),
+    run("git", ["rev-parse", "--show-prefix"], opts),
   ]);
 
   const value =
@@ -113,6 +120,7 @@ export async function localGit(root: string, fresh = false): Promise<LocalGit | 
           commit: clean(head.stdout.trim(), 40),
           dirty: status.code === 0 && status.stdout.trim().length > 0,
           repo: origin.code === 0 ? normalizeRepo(origin.stdout) : "",
+          path: clean(prefix.stdout.trim().replace(/\/+$/, "")),
         }
       : undefined;
   gitCache.set(root, { at: Date.now(), value });
@@ -138,6 +146,7 @@ export async function renderStamp(ctx: vscode.ExtensionContext, cfg: RdkConfig, 
     [LABEL.deviceName]: me.name,
     [LABEL.sshUser]: sshUser(cfg),
     [LABEL.repo]: git?.repo ?? "",
+    [LABEL.path]: git?.path ?? "",
     [LABEL.commit]: git?.commit ?? "",
     [LABEL.dirty]: git?.dirty ? "true" : "false",
     [LABEL.at]: String(Math.floor(Date.now() / 1000)),
@@ -169,6 +178,7 @@ export function parseOwner(get: (key: string) => string | undefined): Owner | un
     deviceName: get(LABEL.deviceName) || "another device",
     sshUser: get(LABEL.sshUser) || "",
     repo: get(LABEL.repo) || "",
+    path: get(LABEL.path),
     commit: get(LABEL.commit) || "",
     dirty: get(LABEL.dirty) === "true",
     at: Number(get(LABEL.at)) || 0,
@@ -181,6 +191,19 @@ export function labelValue(labels: string, key: string): string | undefined {
     const eq = pair.indexOf("=");
     if (eq > 0 && pair.slice(0, eq) === key) return pair.slice(eq + 1);
   }
+  return undefined;
+}
+
+/**
+ * Is the deployment some other project that happens to share this project name? A different repo,
+ * or another folder of the same repo (monorepo packages share a remote). Either way, deploying
+ * here would replace a different project, not update this one. Returns a description, or
+ * undefined when it's the same project or we can't tell.
+ */
+export function otherProject(owner: Owner | undefined, local: LocalGit | undefined): string | undefined {
+  if (!owner?.repo || !local?.repo) return undefined;
+  if (owner.repo !== local.repo) return owner.repo;
+  if (owner.path !== undefined && owner.path !== local.path) return `${owner.repo}/${owner.path || "(repo root)"}`;
   return undefined;
 }
 
@@ -225,13 +248,13 @@ export interface Deployment {
  * Throws when the VPS couldn't be asked. An empty answer means "nothing there"; a failed one must
  * not, or a broken SSH connection would wave a duplicate project name through.
  */
-export async function findDeployments(vpsSsh: string, repo: string, name: string): Promise<Deployment[]> {
+export async function findDeployments(vpsSsh: string, repo: string, name: string, path?: string): Promise<Deployment[]> {
   const q = (s: string) => `'${s.replace(/'/g, "")}'`;
   const fmt = q("{{json .}}");
   const script = [
     repo ? `docker ps -a --filter label=${q(`${LABEL.repo}=${repo}`)} --format ${fmt}` : "true",
     "echo ---rdk---",
-    `docker ps -a --filter label=${q(`com.docker.compose.project=${name}`)} --format ${fmt}`,
+    name ? `docker ps -a --filter label=${q(`com.docker.compose.project=${name}`)} --format ${fmt}` : "true",
   ].join("; ");
 
   const res = await run("ssh", [...sshOpts(8), vpsSsh, script], { timeoutMs: 25_000, maxBuffer: 1024 * 1024 });
@@ -268,8 +291,12 @@ export async function findDeployments(vpsSsh: string, repo: string, name: string
   take(byRepo, "repo");
   take(byName, "name");
 
+  // A repo match from another folder of the same repo (a sibling monorepo package) isn't this
+  // project. Stamps from before the path was recorded can't be told apart, so they stay.
+  const all = [...found.values()].filter(
+    (d) => !(d.matchedBy === "repo" && path !== undefined && d.owner?.path !== undefined && d.owner.path !== path),
+  );
   // Only the sure matches when we have them.
-  const all = [...found.values()];
   return all.some((d) => d.matchedBy === "repo") ? all.filter((d) => d.matchedBy === "repo") : all;
 }
 

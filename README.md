@@ -77,8 +77,9 @@ full stack per machine would double the load on the VPS.
 
 So RDK keeps track of who deployed what:
 
-- **Setup finds it.** If this repo is already deployed on the VPS, setup offers to join it (same
-  containers, data and URL) or to set up a separate one.
+- **A new machine finds it.** On a fresh clone the panel checks your VPS, and if this repo is
+  already running there it says so and offers to join it (same containers, data and URL) or to
+  set up a separate one. Setup asks the same question.
 - **The sidebar says whose code is live**: which device deployed it, which commit, and whether it
   had uncommitted changes. If that's not what you have locally, it says so, and one click deploys
   your version.
