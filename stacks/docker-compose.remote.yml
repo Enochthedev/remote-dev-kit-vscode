@@ -22,6 +22,18 @@ services:
     build:
       context: .
       dockerfile: ${APP_DOCKERFILE:-./Dockerfile}
+      args:
+        # Some frameworks bake config into the client bundle at BUILD time —
+        # Next's NEXT_PUBLIC_*, Vite's VITE_*. A runtime env var arrives far too
+        # late for those: the value is already compiled into the JS the browser
+        # downloads. Declaring them here lets .env.remote set them, and means
+        # repointing an app is a rebuild rather than a restart.
+        #
+        # Unset ones pass through empty and the Dockerfile's own ARG default
+        # wins, so this is harmless for projects that don't use them. Compose
+        # can't do wildcard arg names, so new ones get added here by hand.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        VITE_API_URL: ${VITE_API_URL:-}
     networks:
       # If you add backing services (db/cache) and share a proxy network that has
       # same-named services (e.g. Coolify), give them a unique alias and point your
