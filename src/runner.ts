@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { appUrl, baseFiles, contextName, extraHosts, isOverlay, proxyMode, RdkConfig, stack } from "./config";
 import { andThen, cdLine, commandLine, createShellTerminal, logResult, output, runDocker, sendToTerminal } from "./exec";
+import { describeOwner, isMine, localGit, renderStamp, shortCommit } from "./devices";
 import { renderOverlay } from "./overlay";
 import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
 
@@ -28,6 +29,36 @@ export function composeFilesFor(ctx: vscode.ExtensionContext, cfg: RdkConfig, ro
 
 function compose(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: string, ...rest: string[]): string[] {
   return composeArgs(cfg, root, composeFilesFor(ctx, cfg, root), ...rest);
+}
+
+/** Compose args for commands that (re)create containers: the same files, plus the deploy stamp. */
+async function stamped(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: string, ...rest: string[]): Promise<string[]> {
+  const files = [...composeFilesFor(ctx, cfg, root), await renderStamp(ctx, cfg, root)];
+  return composeArgs(cfg, root, files, ...rest);
+}
+
+/**
+ * Ask before replacing another device's deployment. Containers are shared per project, so a
+ * deploy from here silently swaps out whatever the other machine was running. Our own deploys
+ * and unstamped ones (the CLI, older versions) go ahead without asking.
+ */
+async function confirmTakeover(state: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
+  const owner = state.owner;
+  if (!owner || isMine(owner) || !state.root) return true;
+
+  const local = await localGit(state.root, true);
+  const yours = local ? ` with your ${shortCommit(local.commit)}${local.dirty ? " (uncommitted changes)" : ""}` : "";
+  const detail =
+    action === "Watch"
+      ? `Watch rebuilds from your files and syncs your edits into the same containers. If ${owner.deviceName} is watching too, both sets of edits land in one app.`
+      : `Everyone using this deployment gets your code. ${owner.deviceName} can redeploy theirs at any time.`;
+
+  const pick = await vscode.window.showWarningMessage(
+    `${state.cfg?.projectName} is running code deployed from ${describeOwner(owner)}. ${action} replaces it${yours}.`,
+    { modal: true, detail },
+    action === "Watch" ? "Replace and watch" : "Replace it",
+  );
+  return Boolean(pick);
 }
 
 /** Surface a failed command instead of leaving it buried in a terminal. */
@@ -84,18 +115,22 @@ export async function deploy(ctx: vscode.ExtensionContext, state: RdkState): Pro
     }
   }
 
-  sendToTerminal(["docker", ...compose(ctx, cfg, root, "up", "-d", "--build")], root);
+  if (!(await confirmTakeover(state, "Deploy"))) return;
+  sendToTerminal(["docker", ...(await stamped(ctx, cfg, root, "up", "-d", "--build"))], root);
 }
 
 export async function watch(ctx: vscode.ExtensionContext, state: RdkState): Promise<void> {
   const { cfg, root } = state;
   if (!cfg || !root) return;
   if (!(await ensureConnected(cfg))) return;
+  if (!(await confirmTakeover(state, "Watch"))) return;
 
   const t = createShellTerminal({ name: "RDK: watch", iconPath: new vscode.ThemeIcon("eye") });
   t.show();
-  const up = ["docker", ...compose(ctx, cfg, root, "up", "-d", "--build")];
-  const w = ["docker", ...compose(ctx, cfg, root, "watch")];
+  // Both carry the stamp: `watch` recreates containers from its own file list, and without the
+  // stamp it would wipe the labels `up` just set.
+  const up = ["docker", ...(await stamped(ctx, cfg, root, "up", "-d", "--build"))];
+  const w = ["docker", ...(await stamped(ctx, cfg, root, "watch"))];
   t.sendText(cdLine(root));
   t.sendText(andThen([commandLine(up), `echo "Syncing edits to VPS. Ctrl-C to stop."`, commandLine(w)]));
 }
@@ -182,9 +217,19 @@ export async function start(ctx: vscode.ExtensionContext, state: RdkState): Prom
 }
 
 /** Stop containers but keep volumes — the safe counterpart to destroy. */
-export async function stop(ctx: vscode.ExtensionContext, state: RdkState): Promise<void> {
+export async function stop(ctx: vscode.ExtensionContext, state: RdkState, opts: { confirmed?: boolean } = {}): Promise<void> {
   const { cfg, root } = state;
   if (!cfg || !root) return;
+
+  // Stopping is harmless to your own work but takes the app away from the device that deployed it.
+  if (state.owner && !isMine(state.owner) && !opts.confirmed) {
+    const pick = await vscode.window.showWarningMessage(
+      `Stop ${cfg.projectName}? It was deployed from ${describeOwner(state.owner)}.`,
+      { modal: true, detail: "Data is kept, but the app goes down for that device too." },
+      "Stop it",
+    );
+    if (!pick) return;
+  }
   const args = compose(ctx, cfg, root, "stop");
 
   await vscode.window.withProgress(
@@ -212,14 +257,17 @@ export async function destroy(ctx: vscode.ExtensionContext, state: RdkState): Pr
     `Destroy "${cfg.projectName}" on the VPS?`,
     {
       modal: true,
-      detail: `This permanently deletes ${loses}. Your local code is untouched.\n\nTo stop the app without losing data, use Stop instead.`,
+      detail:
+        `This permanently deletes ${loses}. Your local code is untouched.` +
+        (state.owner && !isMine(state.owner) ? `\n\nIt was deployed from ${describeOwner(state.owner)}, and it goes for that device too.` : "") +
+        `\n\nTo stop the app without losing data, use Stop instead.`,
     },
     "Destroy",
     "Stop instead",
   );
 
   if (pick === "Stop instead") {
-    await stop(ctx, state);
+    await stop(ctx, state, { confirmed: true });
     return;
   }
   if (pick !== "Destroy") return;

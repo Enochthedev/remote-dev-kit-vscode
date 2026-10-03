@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { extraHosts, proxyMode, stack } from "./config";
 import { Phase, phaseLabel, RdkState, Service } from "./state";
+import { ago, describeOwner, isMine, shortCommit } from "./devices";
 import { formatLeft } from "./ttl";
 
 /** What every RDK command receives. Tree rows carry their own project, so a click in one
@@ -236,6 +237,7 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
       case "stopped":
         return [
           ...this.header(s, single),
+          ...this.origin(s),
           new Node("Start", { icon: "play", command: "rdk.start", root: s.root, description: "keep data" }),
           new Node("Deploy", { icon: "cloud-upload", command: "rdk.deploy", root: s.root, description: "rebuild" }),
           this.services(s),
@@ -246,6 +248,7 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
       case "partial":
         return [
           ...this.header(s, single),
+          ...this.origin(s),
           ...this.links(s),
           ...this.expiry(s),
           this.services(s),
@@ -253,6 +256,74 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
           ...this.manage(s),
         ];
     }
+  }
+
+  /**
+   * Which device and commit the VPS is running, and whether that's what you have. Deployments are
+   * shared per project, so on a second machine this is the only place that says whose code is live.
+   */
+  private origin(s: RdkState): Node[] {
+    const o = s.owner;
+    const local = s.local;
+
+    if (!o) {
+      return [
+        new Node("Deployed from: unknown", {
+          icon: "question",
+          description: "redeploy to record it",
+          tooltip:
+            "This deployment has no device stamp: it came from the RDK CLI or an older version of this extension.\nThe next Deploy from here records the device and commit.",
+        }),
+      ];
+    }
+
+    const mine = isMine(o);
+    const rows = [
+      new Node(mine ? "Deployed from this device" : `Deployed from ${o.deviceName}`, {
+        icon: mine ? "device-desktop" : "remote",
+        description: `${o.commit ? shortCommit(o.commit) : "no commit"}${o.dirty ? " +changes" : ""} · ${ago(o.at)}`,
+        tooltip: [
+          `Device:  ${mine ? `${o.deviceName} (this one)` : o.deviceName}`,
+          `SSH:     ${o.sshUser || "?"}@`,
+          `Repo:    ${o.repo || "?"}`,
+          `Commit:  ${o.commit || "?"}${o.dirty ? " with uncommitted changes" : ""}`,
+          `When:    ${o.at ? new Date(o.at * 1000).toLocaleString() : "?"}`,
+        ].join("\n"),
+      }),
+    ];
+
+    // Same project name, different repo: two unrelated projects are fighting over one deployment.
+    if (o.repo && local?.repo && o.repo !== local.repo) {
+      rows.push(
+        new Node("Different repo on the VPS", {
+          icon: "warning",
+          description: o.repo,
+          tooltip: `This deployment was built from ${o.repo}, but this folder is ${local.repo}.\nThey share the project name "${s.cfg?.projectName}". Rename one (PROJECT_NAME in .env.remote) or Deploy replaces the other.`,
+        }),
+      );
+      return rows;
+    }
+
+    if (local && o.commit) {
+      const sameCommit = local.commit === o.commit;
+      if (!sameCommit || local.dirty || o.dirty) {
+        // Uncommitted changes on either side mean we can't tell, so say "may differ", not "differs".
+        const label = sameCommit ? "Your code may differ" : "Your code differs";
+        const why = !sameCommit
+          ? `The VPS runs ${shortCommit(o.commit)} from ${describeOwner(o)}; you're on ${shortCommit(local.commit)}.`
+          : "Same commit, but there are uncommitted changes, so the files may not match.";
+        rows.push(
+          new Node(label, {
+            icon: "git-compare",
+            description: `you: ${shortCommit(local.commit)}${local.dirty ? " +changes" : ""}`,
+            tooltip: `${why}\nClick to deploy your version.`,
+            command: "rdk.deploy",
+            root: s.root,
+          }),
+        );
+      }
+    }
+    return rows;
   }
 
   /** Expiry, when one is set. Loud if nothing is enforcing it — that's worse than no expiry. */

@@ -67,7 +67,27 @@ it still contains `rdk init` placeholders, the sidebar names the keys that need 
 
 Six global VS Code settings sit under `rdk.*`: `vpsSsh`, `baseDomain`, `acmeEmail`,
 `proxyNetwork`, `certResolver`, `certEntrypoint`. The setup wizard fills them in, so you
-shouldn't need to open Settings at all.
+shouldn't need to open Settings at all. `rdk.deviceName` is optional: see below.
+
+## More than one machine
+
+A deployment belongs to the project, not to a machine. Set up the same repo on a laptop and a
+desktop pointing at the same VPS, and both drive one deployment. That's deliberate: a second
+full stack per machine would double the load on the VPS.
+
+So RDK keeps track of who deployed what:
+
+- **Setup finds it.** If this repo is already deployed on the VPS, setup offers to join it (same
+  containers, data and URL) or to set up a separate one.
+- **The sidebar says whose code is live**: which device deployed it, which commit, and whether it
+  had uncommitted changes. If that's not what you have locally, it says so, and one click deploys
+  your version.
+- **Replacing another device's deploy asks first.** Deploy, Watch, Stop and Destroy all name the
+  device whose deployment they affect.
+
+The record is a set of Docker labels on the VPS, so every machine sees the same answer however it
+logs in (`root@` on one, `you@` on another). Name a machine with `rdk.deviceName`; it defaults to
+the hostname. Deploys made with the CLI don't record a device yet and show as "unknown".
 
 ## Works with any stack
 

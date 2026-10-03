@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { randomBytes } from "crypto";
+import { Deployment, describeOwner, findDeployments, localGit } from "./devices";
 import { run } from "./exec";
 import { Defaults, getDefaults, loadConfig, saveDefaults } from "./config";
 import { composeServices, detectBaseCompose, detectProject, probeVps, slug } from "./detect";
@@ -239,26 +240,42 @@ export async function setupProject(root: string, opts: { reconfigure?: boolean }
 
   const existing = loadConfig(root);
   const title = `Remote Dev Kit — ${path.basename(root)}`;
+  const defaultName = slug(existing?.projectName || path.basename(root));
 
-  const projectName = await ask({
-    title,
-    step: 1,
-    total: 2,
-    prompt: "Project name — namespaces the containers, volumes and subdomain.",
-    value: slug(existing?.projectName || path.basename(root)),
-    validate: (v) => (v && slug(v) === v ? undefined : "Lowercase letters, numbers, dash and underscore only"),
-  });
+  // Another machine may already run this repo on the VPS. Joining it shares one deployment;
+  // the alternative is a separate one with its own containers, data and URL.
+  const join = await offerExisting(root, defaults.vpsSsh, defaultName, title);
+  if (join === "cancel") return undefined;
+  const taken = join.others;
+
+  const projectName =
+    join.joined?.project ??
+    (await ask({
+      title,
+      step: 1,
+      total: 2,
+      prompt: "Project name — namespaces the containers, volumes and subdomain.",
+      value: taken.includes(defaultName) ? `${defaultName}-2` : defaultName,
+      validate: (v) =>
+        !v || slug(v) !== v
+          ? "Lowercase letters, numbers, dash and underscore only"
+          : taken.includes(v)
+            ? `"${v}" is the existing deployment. Pick another name, or go back and join it.`
+            : undefined,
+    }));
   if (!projectName) return undefined;
 
   const suggestedHost = `${projectName}.${defaults.baseDomain}`;
-  const appHost = await ask({
-    title,
-    step: 2,
-    total: 2,
-    prompt: "Public URL for this project.",
-    value: existing && !existing.appHost.includes("example.com") ? existing.appHost : suggestedHost,
-    validate: (v) => (HOST_RE.test(v) ? undefined : "Expected a hostname, e.g. myapp.dev.yourdomain.com"),
-  });
+  const appHost =
+    join.joined?.host ??
+    (await ask({
+      title,
+      step: 2,
+      total: 2,
+      prompt: "Public URL for this project.",
+      value: existing && !existing.appHost.includes("example.com") && !join.joined ? existing.appHost : suggestedHost,
+      validate: (v) => (HOST_RE.test(v) ? undefined : "Expected a hostname, e.g. myapp.dev.yourdomain.com"),
+    }));
   if (!appHost) return undefined;
 
   // If the project has its own compose file, that file is the source of truth. RDK layers its
@@ -398,6 +415,49 @@ export async function setupProject(root: string, opts: { reconfigure?: boolean }
 
   await finish(root, projectName, appHost);
   return { root, created: true };
+}
+
+/**
+ * Look for deployments this folder could join, and ask. Matching is by git repo when the
+ * deployment carries a stamp, otherwise by project name, which is weaker: an unrelated project
+ * can share a name, so the picker says which kind of match it is.
+ */
+async function offerExisting(
+  root: string,
+  vpsSsh: string,
+  name: string,
+  title: string,
+): Promise<{ joined?: Deployment; others: string[] } | "cancel"> {
+  const git = await localGit(root, true);
+  const found = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "Looking for an existing deployment on the VPS…" },
+    () => findDeployments(vpsSsh, git?.repo ?? "", name).catch(() => [] as Deployment[]),
+  );
+  if (!found.length) return { others: [] };
+
+  type Item = vscode.QuickPickItem & { d?: Deployment };
+  const items: Item[] = found.map((d) => ({
+    label: `$(plug) Join ${d.project}`,
+    description: d.host,
+    detail: [
+      d.owner ? `Deployed from ${describeOwner(d.owner)}` : "Deployed by the CLI or an older RDK (no device stamp)",
+      `${d.running}/${d.total} running`,
+      d.matchedBy === "repo" ? "same repo" : "same name only, check it's this project",
+    ].join(" · "),
+    d,
+  }));
+  items.push({
+    label: "$(add) Set up a separate deployment",
+    detail: "Its own containers, data and URL. Uses more of the VPS.",
+  });
+
+  const pick = await vscode.window.showQuickPick(items, {
+    title: `${title}: already deployed on this VPS`,
+    placeHolder: "Join it to share one deployment with your other devices, or set up a separate one",
+    ignoreFocusOut: true,
+  });
+  if (!pick) return "cancel";
+  return { joined: pick.d, others: found.map((d) => d.project) };
 }
 
 async function finish(root: string, projectName: string, _appHost: string): Promise<void> {

@@ -2,7 +2,7 @@
   "name": "remote-dev-kit",
   "displayName": "Remote Dev Kit",
   "description": "Run and hot-reload your project on a remote VPS from VS Code. No local Docker, and your code stays on your machine.",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "publisher": "wavestudio",
   "author": {
     "name": "Wave",
@@ -480,6 +480,13 @@
           "default": [],
           "markdownDescription": "Folder names to skip when scanning for projects, in addition to the usual suspects (`node_modules`, `.git`, `.venv`, `dist`, `build`, …).",
           "order": 8
+        },
+        "rdk.deviceName": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "How this machine is named to your other devices, e.g. `Mac` or `Office PC`. Shown when a deployment is shared between machines. Defaults to the hostname.",
+          "order": 9
         }
       }
     }
