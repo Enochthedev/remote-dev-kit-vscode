@@ -5,7 +5,7 @@ import { andThen, cdLine, commandLine, createShellTerminal, logResult, output, r
 import { describeOwner, isMine, localGit, otherProject, renderStamp, shortCommit } from "./devices";
 import { openEnvFile } from "./wizard";
 import { renderOverlay } from "./overlay";
-import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
+import { composeArgs, contextExists, forgetTtl, RdkState, resolveState } from "./state";
 
 export function stackFile(ctx: vscode.ExtensionContext, cfg: RdkConfig): string {
   return ctx.asAbsolutePath(path.join("stacks", cfg.composeFile));
@@ -43,10 +43,16 @@ async function stamped(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: strin
  * deploy from here silently swaps out whatever the other machine was running. Our own deploys
  * and unstamped ones (the CLI, older versions) go ahead without asking.
  */
-async function confirmTakeover(state: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
+async function confirmTakeover(shown: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
+  if (!shown.root) return true;
+  // Decide on what the VPS says now, not on what the panel last showed. A machine that has just
+  // joined has no docker context yet, so its panel reads "not connected" with no services. Trusting
+  // that skipped this check on exactly the deploy it exists for: a second machine's first one.
+  // Callers connect first, so this read reaches the VPS.
+  const state = await resolveState(shown.root, { previous: shown });
   const owner = state.owner;
-  if (!state.root || !state.services.length) return true; // nothing running to replace
-  const local = await localGit(state.root, true);
+  if (!state.services.length) return true; // nothing running to replace
+  const local = await localGit(shown.root, true);
   const name = state.cfg?.projectName;
 
   // Same name, different repo: not a newer version of this project but another project entirely.
@@ -61,7 +67,7 @@ async function confirmTakeover(state: RdkState, action: "Deploy" | "Watch"): Pro
       },
       "Edit .env.remote",
     );
-    if (pick) await openEnvFile(state.root);
+    if (pick) await openEnvFile(shown.root);
     return false;
   }
 
