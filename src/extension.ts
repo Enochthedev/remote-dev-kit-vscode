@@ -10,6 +10,7 @@ import * as run from "./runner";
 import {
   fingerprint,
   forgetContext,
+  forgetExisting,
   forgetTtl,
   phaseLabel,
   publishContext,
@@ -394,6 +395,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     forgetBins();
     forgetContext();
     forgetTtl();
+    forgetExisting();
     delay = POLL_MIN_MS;
     return refresh();
   });

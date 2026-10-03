@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { extraHosts, proxyMode, stack } from "./config";
 import { Phase, phaseLabel, RdkState, Service } from "./state";
-import { ago, describeOwner, isMine, shortCommit } from "./devices";
+import { ago, describeOwner, isMine, otherProject, shortCommit } from "./devices";
 import { formatLeft } from "./ttl";
 
 /** What every RDK command receives. Tree rows carry their own project, so a click in one
@@ -154,10 +154,12 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
     const single = this.all.length === 1;
 
     switch (s.phase) {
+      case "unconfigured":
+        if (s.existing?.length) return this.existing(s);
+      // falls through
       case "no-workspace":
       case "no-project":
       case "not-deployable":
-      case "unconfigured":
         // Handled by viewsWelcome when it's the only project; inline when it's one of many.
         return single
           ? []
@@ -259,6 +261,45 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
   }
 
   /**
+   * Not set up here, but this repo already runs on the VPS: offer to join rather than presenting
+   * a blank "deploy this project", which would lead to a second copy or a name clash.
+   */
+  private existing(s: RdkState): Node[] {
+    const list = s.existing ?? [];
+    return [
+      new Node("Already deployed on your VPS", {
+        icon: "cloud",
+        description: list.length === 1 ? "this repo" : `${list.length} deployments of this repo`,
+        tooltip:
+          "This repo is running on your VPS, set up from another machine or before this clone.\n.env.remote isn't in git, so this machine doesn't know about it until you join.",
+      }),
+      ...list.map(
+        (d) =>
+          new Node(`Join ${d.project}`, {
+            icon: "plug",
+            description: d.owner ? `from ${d.owner.deviceName} · ${ago(d.owner.at)}` : `${d.running}/${d.total} running`,
+            tooltip: [
+              d.host ? `https://${d.host}` : undefined,
+              d.owner ? `Deployed from ${describeOwner(d.owner)}` : undefined,
+              `${d.running}/${d.total} containers running`,
+              "Click to set this machine up to use it. Nothing is redeployed until you choose to.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            command: "rdk.setup",
+            root: s.root,
+          }),
+      ),
+      new Node("Set up a separate deployment…", {
+        icon: "add",
+        description: "own data and URL",
+        command: "rdk.setup",
+        root: s.root,
+      }),
+    ];
+  }
+
+  /**
    * Which device and commit the VPS is running, and whether that's what you have. Deployments are
    * shared per project, so on a second machine this is the only place that says whose code is live.
    */
@@ -292,13 +333,14 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
       }),
     ];
 
-    // Same project name, different repo: two unrelated projects are fighting over one deployment.
-    if (o.repo && local?.repo && o.repo !== local.repo) {
+    // Same project name, different project: two of them are fighting over one deployment.
+    const other = otherProject(o, local);
+    if (other && local) {
       rows.push(
-        new Node("Different repo on the VPS", {
+        new Node("A different project on the VPS", {
           icon: "warning",
-          description: o.repo,
-          tooltip: `This deployment was built from ${o.repo}, but this folder is ${local.repo}.\nThey share the project name "${s.cfg?.projectName}". Rename one (PROJECT_NAME in .env.remote) or Deploy replaces the other.`,
+          description: other,
+          tooltip: `This deployment was built from ${other}, but this folder is ${local.repo}${local.path ? `/${local.path}` : ""}.\nThey share the project name "${s.cfg?.projectName}". Rename one (PROJECT_NAME in .env.remote) or Deploy replaces the other.`,
         }),
       );
       return rows;

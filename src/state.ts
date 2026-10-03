@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { RdkConfig, contextName, loadConfig, unresolved } from "./config";
+import { RdkConfig, contextName, getDefaults, loadConfig, unresolved } from "./config";
 import { detectProject, ProjectShape } from "./detect";
 import { envExists } from "./env";
-import { labelValue, LocalGit, localGit, Owner, parseOwner } from "./devices";
+import { Deployment, findDeployments, labelValue, LocalGit, localGit, Owner, parseOwner } from "./devices";
 import { runDocker, which } from "./exec";
 import { projectTtl, readTtl, Ttl, TTL_REFRESH_MS } from "./ttl";
 
@@ -40,6 +40,12 @@ export interface RdkState {
   /** Which .env.remote keys are missing/placeholder (phase === "incomplete"). */
   missing: string[];
   services: Service[];
+  /**
+   * A folder not set up on this machine whose repo is already deployed on the VPS (from another
+   * machine, or before a fresh clone). `.env.remote` is git-ignored, so it never travels with the
+   * code; this is how the second machine finds out.
+   */
+  existing?: Deployment[];
   /** Why we're disconnected, when it's something the user can fix that isn't the network. */
   problem?: "docker-denied";
   /** Expiry, if one is set. Only read for deployed projects — it costs an SSH round-trip. */
@@ -158,6 +164,35 @@ export async function contextExists(name: string): Promise<boolean> {
   return res.code === 0;
 }
 
+/**
+ * Existing deployments of an unconfigured folder, asked of the VPS once per window. It's a hint:
+ * nobody asked for it, so it costs one SSH call, fails silently, and doesn't repeat every poll.
+ * Refresh clears it, and so does setting the folder up.
+ */
+const existingCache = new Map<string, Promise<Deployment[]>>();
+
+export function forgetExisting(): void {
+  existingCache.clear();
+}
+
+function existingFor(root: string): Promise<Deployment[]> {
+  const vps = getDefaults().vpsSsh;
+  if (!vps) return Promise.resolve([]); // this machine hasn't been pointed at a VPS yet
+  const key = `${vps}\n${root}`;
+  let hit = existingCache.get(key);
+  if (!hit) {
+    hit = (async () => {
+      const git = await localGit(root);
+      // Repo only. A name match could be any project, which is fine to show inside setup with a
+      // caveat but not as an unprompted "this is yours".
+      if (!git?.repo) return [];
+      return findDeployments(vps, git.repo, "", git.path);
+    })().catch(() => []);
+    existingCache.set(key, hit);
+  }
+  return hit;
+}
+
 /** Last expiry read per project, so the countdown can tick locally between SSH reads. */
 const ttlCache = new Map<string, Ttl>();
 
@@ -198,7 +233,9 @@ export async function resolveState(root: string | undefined, opts: ResolveOpts =
   const shape = detectProject(root);
 
   if (!envExists(root)) {
-    return { phase: shape.deployable ? "unconfigured" : "not-deployable", root, shape, ...empty };
+    if (!shape.deployable) return { phase: "not-deployable", root, shape, ...empty };
+    const existing = opts.localOnly ? undefined : await existingFor(root);
+    return { phase: "unconfigured", root, shape, ...empty, existing: existing?.length ? existing : undefined };
   }
 
   const cfg = loadConfig(root);
@@ -276,7 +313,8 @@ export function fingerprint(states: RdkState[]): string {
       const ttl = s.ttl ? Math.floor(s.ttl.secondsLeft / 60) : "";
       const own = s.owner ? `${s.owner.deviceId}@${s.owner.commit}:${s.owner.dirty}:${s.owner.at}` : "";
       const loc = s.local ? `${s.local.commit}:${s.local.dirty}` : "";
-      return `${s.root}=${s.phase}#${s.problem ?? ""}#${s.missing.join(",")}#${svc}#${ttl}#${own}#${loc}`;
+      const ex = (s.existing ?? []).map((d) => `${d.project}:${d.running}`).join(",");
+      return `${s.root}=${s.phase}#${s.problem ?? ""}#${s.missing.join(",")}#${svc}#${ttl}#${own}#${loc}#${ex}`;
     })
     .join("\n");
 }

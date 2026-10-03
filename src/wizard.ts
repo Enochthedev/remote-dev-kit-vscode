@@ -434,7 +434,7 @@ async function offerExisting(
   try {
     found = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Looking for an existing deployment on the VPS…" },
-      () => findDeployments(vpsSsh, git?.repo ?? "", name),
+      () => findDeployments(vpsSsh, git?.repo ?? "", name, git?.path),
     );
   } catch (e) {
     const pick = await vscode.window.showWarningMessage(
