@@ -11,6 +11,16 @@
   wizard's VPS check (a false "Can't reach" with a working key) and the expiry countdown (always
   "No expiry"). The socket now lives in `~/.ssh`, and if no short enough path exists RDK connects
   without sharing instead of failing.
+- **A VPS user who can't use Docker is told so, instead of "can't reach".** Connecting as a
+  non-root user (`you@` rather than `root@`) who isn't in the VPS's `docker` group made every
+  Docker call fail with "permission denied", which the panel read as the VPS being unreachable.
+  Worse, setup read the empty network list as "no proxy here" and would set up a second Traefik on
+  a server that already had one. Setup now stops and gives the fix (`sudo usermod -aG docker you`),
+  and the panel says the same.
+- **Linux: Docker installed with snap is found.** `/snap/bin` is now searched; it isn't on `PATH`
+  when VS Code starts from a desktop launcher.
+- **The "Docker CLI not found" hint fits your OS.** It said `brew install docker` everywhere,
+  including Linux and Windows.
 
 ## 0.5.2
 

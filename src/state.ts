@@ -39,6 +39,8 @@ export interface RdkState {
   /** Which .env.remote keys are missing/placeholder (phase === "incomplete"). */
   missing: string[];
   services: Service[];
+  /** Why we're disconnected, when it's something the user can fix that isn't the network. */
+  problem?: "docker-denied";
   /** Expiry, if one is set. Only read for deployed projects — it costs an SSH round-trip. */
   ttl?: Ttl;
 }
@@ -221,6 +223,11 @@ export async function resolveState(root: string | undefined, opts: ResolveOpts =
   );
 
   if (ps.code !== 0) {
+    // Reached the VPS, but this SSH user isn't allowed to use Docker. Matches UNREACHABLE's
+    // "permission denied" too, so check it first: it needs a group change, not an SSH fix.
+    if (/permission denied.*docker|docker\.sock/i.test(ps.stderr)) {
+      return { phase: "disconnected", root, cfg, shape, missing: [], services: [], problem: "docker-denied" };
+    }
     // The context exists but the daemon is unreachable (VPS down, SSH broken).
     if (UNREACHABLE.test(ps.stderr)) {
       forgetContext(ctxName);
@@ -253,7 +260,7 @@ export function fingerprint(states: RdkState[]): string {
       const svc = s.services.map((x) => `${x.name}:${x.state}:${x.health ?? ""}`).join("|");
       // Bucket the countdown: it changes every second, but the label only renders whole minutes.
       const ttl = s.ttl ? Math.floor(s.ttl.secondsLeft / 60) : "";
-      return `${s.root}=${s.phase}#${s.missing.join(",")}#${svc}#${ttl}`;
+      return `${s.root}=${s.phase}#${s.problem ?? ""}#${s.missing.join(",")}#${svc}#${ttl}`;
     })
     .join("\n");
 }

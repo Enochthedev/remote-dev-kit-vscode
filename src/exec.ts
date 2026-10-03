@@ -63,6 +63,7 @@ function fallbacks(bin: string): string[] {
     path.join(home, ".docker", "bin", bin),
     path.join(home, ".rd", "bin", bin), // Rancher Desktop
     path.join(home, ".local", "bin", bin),
+    `/snap/bin/${bin}`, // Ubuntu's snap; not on PATH when VS Code starts from a desktop launcher
     "/Applications/Docker.app/Contents/Resources/bin/" + bin,
   ];
 }

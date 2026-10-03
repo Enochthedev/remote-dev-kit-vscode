@@ -138,6 +138,17 @@ export async function setupDefaults(force = false): Promise<Defaults | undefined
       return undefined;
     }
     if (pick !== "Continue anyway") return undefined;
+  } else if (probe.dockerDenied) {
+    // Carrying on would detect the proxy wrongly (everything reads as empty), so don't offer it.
+    const user = vpsSsh.split("@")[0];
+    const fix = `sudo usermod -aG docker ${user}`;
+    const pick = await vscode.window.showErrorMessage(
+      `Connected to ${vpsSsh}, but ${user} can't use Docker there.`,
+      { modal: true, detail: `Log in to the VPS as root (or with sudo) and run:\n\n${fix}\n\nThen run setup again. Or set up with root@ instead.` },
+      "Copy command",
+    );
+    if (pick === "Copy command") await vscode.env.clipboard.writeText(fix);
+    return undefined;
   } else if (!probe.hasDocker) {
     vscode.window.showWarningMessage(`Connected to ${vpsSsh}, but Docker isn't installed there.`);
   }
