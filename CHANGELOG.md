@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.0
+
+Several machines, one deployment. Set up the same repo on two machines against one VPS and they
+already shared a deployment, silently: whoever deployed last replaced the other's build, and
+nothing said whose code was running. Sharing stays the default, but now it's visible and asks
+before overwriting.
+
+- **Every deploy records who deployed what.** Deploy and Watch add labels to the app container:
+  the device, the SSH user it logged in as, the git repo, the commit, whether there were
+  uncommitted changes, and when. They live on the VPS, so every machine reads the same record,
+  whichever SSH user it uses.
+- **Setup offers to join an existing deployment.** If this repo is already deployed on the VPS
+  (or, for deploys made before this version, something with the same project name), setup lists
+  it with who deployed it and when, and offers to join it or set up a separate one. Joining means
+  both machines deploy to it; replacing the other machine's build still asks first.
+- **Two projects can't share a name.** Containers, volumes and the URL router are all keyed by the
+  project name, so a clash means one project replaces the other. Setup checks whatever name you
+  pick against the VPS and refuses one that's taken. If setup couldn't reach the VPS to check, it
+  says so instead of assuming the name is free. And Deploy refuses outright (no "replace anyway")
+  when the name on the VPS belongs to a different repo: change `PROJECT_NAME` instead.
+- **Deploying over an unrecorded deployment asks once.** Deploys from the CLI or older versions
+  have no record of who made them. The first Deploy from this version asks before replacing one,
+  then records it.
+- **The sidebar says whose code is live.** A "Deployed from …" row shows the device, commit and
+  age. "Your code differs" appears when your commit isn't the one running, and clicking it deploys
+  yours. "Different repo on the VPS" warns when two unrelated projects share a project name.
+- **Replacing another device's deployment asks first.** Deploy and Watch name the device and
+  commit you'd replace. Stop and Destroy say whose deployment they end.
+- **New setting `rdk.deviceName`** names this machine to your others. Defaults to the hostname.
+
+Deploys made with the `rdk` CLI don't record a device yet and show as "unknown".
+
 ## 0.5.3
 
 - **SSH from the extension works on macOS again.** Since 0.5.0, every SSH call the extension made

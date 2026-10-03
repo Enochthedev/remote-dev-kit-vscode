@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { RdkConfig, contextName, loadConfig, unresolved } from "./config";
 import { detectProject, ProjectShape } from "./detect";
 import { envExists } from "./env";
+import { labelValue, LocalGit, localGit, Owner, parseOwner } from "./devices";
 import { runDocker, which } from "./exec";
 import { projectTtl, readTtl, Ttl, TTL_REFRESH_MS } from "./ttl";
 
@@ -43,19 +44,14 @@ export interface RdkState {
   problem?: "docker-denied";
   /** Expiry, if one is set. Only read for deployed projects — it costs an SSH round-trip. */
   ttl?: Ttl;
+  /** Who deployed what, from the app container's stamp. Undefined for unstamped deploys. */
+  owner?: Owner;
+  /** This folder's commit, to compare with the owner's. Only read for deployed projects. */
+  local?: LocalGit;
 }
 
 function isUp(s: Service): boolean {
   return s.state === "running";
-}
-
-/** `docker ps` reports labels as one `k=v,k=v` string. */
-function labelValue(labels: string, key: string): string | undefined {
-  for (const pair of String(labels ?? "").split(",")) {
-    const eq = pair.indexOf("=");
-    if (eq > 0 && pair.slice(0, eq) === key) return pair.slice(eq + 1);
-  }
-  return undefined;
 }
 
 /**
@@ -106,6 +102,23 @@ export function parsePs(stdout: string): Service[] {
   // Compose orders by service name; `docker ps` orders by creation. Sort so the tree stops
   // reshuffling its rows every time a container is recreated.
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The deploy stamp on the app service's container, if it has one. */
+export function ownerFrom(stdout: string, appService: string): Owner | undefined {
+  for (const line of stdout.split(/\r?\n/)) {
+    let r: any;
+    try {
+      r = JSON.parse(line.trim());
+    } catch {
+      continue;
+    }
+    const labels = String(r.Labels ?? "");
+    if (labelValue(labels, "com.docker.compose.service") !== appService) continue;
+    if (labelValue(labels, "com.docker.compose.oneoff") === "True") continue;
+    return parseOwner((k) => labelValue(labels, k));
+  }
+  return undefined;
 }
 
 /** `files` is one bundled stack, or (overlay mode) the project's own compose file(s) + our overlay. */
@@ -249,8 +262,9 @@ export async function resolveState(root: string | undefined, opts: ResolveOpts =
 
   const up = services.filter(isUp).length;
   const phase: Phase = up === 0 ? "stopped" : up === services.length ? "running" : "partial";
-  const ttl = await currentTtl(cfg);
-  return { phase, root, cfg, shape, missing: [], services, ttl };
+  const [ttl, local] = await Promise.all([currentTtl(cfg), localGit(root)]);
+  const owner = ownerFrom(ps.stdout, cfg.appService);
+  return { phase, root, cfg, shape, missing: [], services, ttl, owner, local };
 }
 
 /** A compact snapshot of everything the UI draws — lets a poll skip a repaint when nothing moved. */
@@ -260,7 +274,9 @@ export function fingerprint(states: RdkState[]): string {
       const svc = s.services.map((x) => `${x.name}:${x.state}:${x.health ?? ""}`).join("|");
       // Bucket the countdown: it changes every second, but the label only renders whole minutes.
       const ttl = s.ttl ? Math.floor(s.ttl.secondsLeft / 60) : "";
-      return `${s.root}=${s.phase}#${s.problem ?? ""}#${s.missing.join(",")}#${svc}#${ttl}`;
+      const own = s.owner ? `${s.owner.deviceId}@${s.owner.commit}:${s.owner.dirty}:${s.owner.at}` : "";
+      const loc = s.local ? `${s.local.commit}:${s.local.dirty}` : "";
+      return `${s.root}=${s.phase}#${s.problem ?? ""}#${s.missing.join(",")}#${svc}#${ttl}#${own}#${loc}`;
     })
     .join("\n");
 }
