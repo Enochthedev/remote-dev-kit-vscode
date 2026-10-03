@@ -3,6 +3,7 @@ import * as path from "path";
 import { appUrl, baseFiles, contextName, extraHosts, isOverlay, proxyMode, RdkConfig, stack } from "./config";
 import { andThen, cdLine, commandLine, createShellTerminal, logResult, output, runDocker, sendToTerminal } from "./exec";
 import { describeOwner, isMine, localGit, renderStamp, shortCommit } from "./devices";
+import { openEnvFile } from "./wizard";
 import { renderOverlay } from "./overlay";
 import { composeArgs, contextExists, forgetTtl, RdkState } from "./state";
 
@@ -44,9 +45,40 @@ async function stamped(ctx: vscode.ExtensionContext, cfg: RdkConfig, root: strin
  */
 async function confirmTakeover(state: RdkState, action: "Deploy" | "Watch"): Promise<boolean> {
   const owner = state.owner;
-  if (!owner || isMine(owner) || !state.root) return true;
-
+  if (!state.root || !state.services.length) return true; // nothing running to replace
   const local = await localGit(state.root, true);
+  const name = state.cfg?.projectName;
+
+  // Same name, different repo: not a newer version of this project but another project entirely.
+  // There's no "replace it" here, even for our own device. One of the two has to be renamed.
+  if (owner?.repo && local?.repo && owner.repo !== local.repo) {
+    const pick = await vscode.window.showErrorMessage(
+      `"${name}" on the VPS is a different project: ${owner.repo}.`,
+      {
+        modal: true,
+        detail: `It was deployed from ${describeOwner(owner)}. This folder is ${local.repo}. Deploying would replace it.\n\nGive this project its own name: change PROJECT_NAME in .env.remote.`,
+      },
+      "Edit .env.remote",
+    );
+    if (pick) await openEnvFile(state.root);
+    return false;
+  }
+
+  if (!owner) {
+    // Deployed by the CLI or an older RDK: no record of whose it is. Ask once; after this
+    // deploy it carries a stamp and the normal rules apply.
+    const pick = await vscode.window.showWarningMessage(
+      `There's no record of who deployed "${name}".`,
+      {
+        modal: true,
+        detail: `It was deployed by the RDK CLI or an older version of this extension. ${action} replaces it with your files. From then on RDK records which device deployed it.`,
+      },
+      action === "Watch" ? "Replace and watch" : "Replace it",
+    );
+    return Boolean(pick);
+  }
+  if (isMine(owner)) return true;
+
   const yours = local ? ` with your ${shortCommit(local.commit)}${local.dirty ? " (uncommitted changes)" : ""}` : "";
   const detail =
     action === "Watch"

@@ -264,6 +264,7 @@ export async function setupProject(root: string, opts: { reconfigure?: boolean }
             : undefined,
     }));
   if (!projectName) return undefined;
+  if (!join.joined && !(await nameIsFree(defaults.vpsSsh, projectName))) return undefined;
 
   const suggestedHost = `${projectName}.${defaults.baseDomain}`;
   const appHost =
@@ -429,10 +430,23 @@ async function offerExisting(
   title: string,
 ): Promise<{ joined?: Deployment; others: string[] } | "cancel"> {
   const git = await localGit(root, true);
-  const found = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Looking for an existing deployment on the VPS…" },
-    () => findDeployments(vpsSsh, git?.repo ?? "", name).catch(() => [] as Deployment[]),
-  );
+  let found: Deployment[];
+  try {
+    found = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Looking for an existing deployment on the VPS…" },
+      () => findDeployments(vpsSsh, git?.repo ?? "", name),
+    );
+  } catch (e) {
+    const pick = await vscode.window.showWarningMessage(
+      "Couldn't check the VPS for an existing deployment of this project.",
+      {
+        modal: true,
+        detail: `${(e as Error).message}\n\nIf you carry on and pick a name another project already uses, deploying replaces that project.`,
+      },
+      "Continue anyway",
+    );
+    return pick ? { others: [] } : "cancel";
+  }
   if (!found.length) return { others: [] };
 
   type Item = vscode.QuickPickItem & { d?: Deployment };
@@ -458,6 +472,32 @@ async function offerExisting(
   });
   if (!pick) return "cancel";
   return { joined: pick.d, others: found.map((d) => d.project) };
+}
+
+/**
+ * A separate deployment needs a name nothing on the VPS uses: containers, volumes and the
+ * Traefik router are all keyed by it, so a clash means one project replaces the other. The
+ * pre-check only knew names from this repo or the default; this checks the one actually chosen.
+ */
+async function nameIsFree(vpsSsh: string, name: string): Promise<boolean> {
+  let clash: Deployment[] = [];
+  try {
+    clash = await findDeployments(vpsSsh, "", name);
+  } catch {
+    return true; // already warned about the lookup failing; the user chose to carry on
+  }
+  const d = clash.find((x) => x.project === name);
+  if (!d) return true;
+  await vscode.window.showErrorMessage(
+    `"${name}" is already a project on this VPS.`,
+    {
+      modal: true,
+      detail:
+        (d.owner ? `Deployed from ${describeOwner(d.owner)}${d.owner.repo ? ` (${d.owner.repo})` : ""}.` : "Deployed by the CLI or an older RDK.") +
+        "\n\nTwo projects can't share a name: deploying one replaces the other. Run setup again and pick a different name.",
+    },
+  );
+  return false;
 }
 
 async function finish(root: string, projectName: string, _appHost: string): Promise<void> {

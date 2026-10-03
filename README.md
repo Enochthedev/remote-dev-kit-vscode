@@ -84,6 +84,8 @@ So RDK keeps track of who deployed what:
   your version.
 - **Replacing another device's deploy asks first.** Deploy, Watch, Stop and Destroy all name the
   device whose deployment they affect.
+- **Names are unique per VPS.** A separate deployment needs a name nothing else on the VPS uses.
+  Setup refuses a taken name, and Deploy refuses to replace a project from a different repo.
 
 The record is a set of Docker labels on the VPS, so every machine sees the same answer however it
 logs in (`root@` on one, `you@` on another). Name a machine with `rdk.deviceName`; it defaults to

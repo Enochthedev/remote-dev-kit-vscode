@@ -221,6 +221,9 @@ export interface Deployment {
 /**
  * Deployments on the VPS that this folder could join: the same git repo, or (for deploys made
  * before stamps existed, or by the CLI) the same project name.
+ *
+ * Throws when the VPS couldn't be asked. An empty answer means "nothing there"; a failed one must
+ * not, or a broken SSH connection would wave a duplicate project name through.
  */
 export async function findDeployments(vpsSsh: string, repo: string, name: string): Promise<Deployment[]> {
   const q = (s: string) => `'${s.replace(/'/g, "")}'`;
@@ -232,7 +235,9 @@ export async function findDeployments(vpsSsh: string, repo: string, name: string
   ].join("; ");
 
   const res = await run("ssh", [...sshOpts(8), vpsSsh, script], { timeoutMs: 25_000, maxBuffer: 1024 * 1024 });
-  if (res.code !== 0 && !res.stdout.includes("---rdk---")) return [];
+  if (!res.stdout.includes("---rdk---")) {
+    throw new Error((res.stderr || res.stdout).trim().split(/\r?\n/).pop() || `ssh exited ${res.code}`);
+  }
   const [byRepo = "", byName = ""] = res.stdout.split("---rdk---");
 
   const found = new Map<string, Deployment>();
