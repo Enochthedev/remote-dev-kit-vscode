@@ -168,7 +168,12 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
           new Node("Install Docker CLI", {
             icon: "link-external",
             command: "rdk.installDocker",
-            description: "brew install docker",
+            description:
+              process.platform === "darwin"
+                ? "brew install docker"
+                : process.platform === "win32"
+                  ? "Docker Desktop"
+                  : "docker CLI from your package manager",
           }),
         ];
 
@@ -194,6 +199,19 @@ export class RdkTree implements vscode.TreeDataProvider<Node> {
         ];
 
       case "disconnected":
+        if (s.problem === "docker-denied") {
+          const user = s.cfg?.vpsSsh.split("@")[0] ?? "this user";
+          return [
+            ...this.header(s, single),
+            new Node(`${user} can't use Docker on the VPS`, {
+              icon: "warning",
+              description: "needs the docker group",
+              tooltip: `SSH works, but ${user} isn't allowed to use Docker.\nOn the VPS, as root: sudo usermod -aG docker ${user}\nThen click Refresh.`,
+            }),
+            new Node("Refresh", { icon: "refresh", command: "rdk.refresh" }),
+            ...this.manage(s),
+          ];
+        }
         return [
           ...this.header(s, single),
           new Node("Connect to VPS", {

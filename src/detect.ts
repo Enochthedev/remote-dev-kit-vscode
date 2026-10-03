@@ -160,6 +160,11 @@ export interface VpsProbe {
   /** Did the SSH connection succeed without a prompt (key-based)? */
   passwordless: boolean;
   hasDocker: boolean;
+  /**
+   * Docker is installed but this SSH user can't talk to it: a non-root login outside the
+   * `docker` group. Everything Docker-related then fails with "permission denied".
+   */
+  dockerDenied?: boolean;
   /** "coolify" if an existing Coolify/Traefik proxy is running, else "bare". */
   proxyMode: "bare" | "coolify";
   proxyNetwork: string;
@@ -191,7 +196,9 @@ export async function probeVps(vpsSsh: string): Promise<VpsProbe> {
   const script = [
     "echo rdk-ok",
     "echo ---",
-    "command -v docker >/dev/null && echo yes",
+    // `docker ps` rather than just `command -v`: a non-root user outside the docker group has the
+    // binary but no access, and every later answer would silently come back empty.
+    "command -v docker >/dev/null && { docker ps -q >/dev/null 2>&1 && echo yes || echo denied; }",
     "echo ---",
     "docker network ls --format '{{.Name}}' 2>/dev/null",
     "echo ---",
@@ -207,6 +214,17 @@ export async function probeVps(vpsSsh: string): Promise<VpsProbe> {
   base.reachable = true;
   base.passwordless = true;
 
+  if (dockerOut.includes("denied")) {
+    // Without access the network list is empty, which used to read as "no proxy here" and set
+    // up a second Traefik on a server that already had one. Stop instead of guessing.
+    const user = vpsSsh.split("@")[0];
+    return {
+      ...base,
+      hasDocker: true,
+      dockerDenied: true,
+      error: `Docker is installed, but ${user} can't use it. On the VPS, run: sudo usermod -aG docker ${user}, then log in again.`,
+    };
+  }
   base.hasDocker = dockerOut.includes("yes");
   if (!base.hasDocker) {
     return { ...base, error: "Docker is not installed on the VPS" };
