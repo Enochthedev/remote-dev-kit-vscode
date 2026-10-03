@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3
+
+- **SSH from the extension works on macOS again.** Since 0.5.0, every SSH call the extension made
+  itself failed on macOS with `too long for Unix domain socket`. Connection sharing kept its socket
+  in the system temp folder, which on macOS is a long `/var/folders/…` path. With the 40-character
+  connection hash and the temporary suffix ssh adds, that went past the 104-byte limit for socket
+  paths, and ssh exits instead of falling back. The panel's status still worked, because it goes
+  through Docker's own SSH connection, so the failure was easy to miss. What broke: the setup
+  wizard's VPS check (a false "Can't reach" with a working key) and the expiry countdown (always
+  "No expiry"). The socket now lives in `~/.ssh`, and if no short enough path exists RDK connects
+  without sharing instead of failing.
+
 ## 0.5.2
 
 Windows. Setup didn't work there at all; it does now, and nothing changes on macOS or Linux.

@@ -144,16 +144,30 @@ export function sshOpts(connectTimeout = 8): string[] {
   // Windows' bundled OpenSSH has no connection multiplexing: asking for a ControlMaster makes
   // every call fail, which surfaced as "can't reach the VPS" even with a working key.
   if (isWindows) return base;
-  return [
-    ...base,
-    "-o",
-    "ControlMaster=auto",
-    // %C hashes host/port/user into 32 chars, keeping the socket path under the ~104 byte limit.
-    "-o",
-    `ControlPath=${path.join(os.tmpdir(), "rdk-%C")}`,
-    "-o",
-    "ControlPersist=60s",
-  ];
+  const sock = controlPath();
+  if (!sock) return base;
+  return [...base, "-o", "ControlMaster=auto", "-o", `ControlPath=${sock}`, "-o", "ControlPersist=60s"];
+}
+
+/**
+ * Where the multiplexing socket goes, or undefined if no short enough path exists.
+ *
+ * A Unix socket path is capped at 104 bytes on macOS (108 on Linux), and ssh needs room for more
+ * than the final name: %C expands to 40 hex characters, and while setting the socket up ssh adds
+ * a 17-character temporary suffix. This used to live in os.tmpdir(), which on macOS is
+ * `/var/folders/xx/…/T/`, about 50 bytes on its own. That pushed every path over the limit, and
+ * ssh exits 255 ("too long for Unix domain socket") rather than falling back, so every
+ * extension-made SSH call failed on macOS: the setup check, expiry reads, all of it.
+ */
+function controlPath(): string | undefined {
+  const ssh = path.join(os.homedir(), ".ssh");
+  for (const dir of [ssh, "/tmp"]) {
+    const p = path.join(dir, "rdk-%C");
+    if (p.length - "%C".length + 40 + 17 >= 100) continue;
+    if (dir === ssh && !fs.existsSync(ssh)) continue;
+    return p;
+  }
+  return undefined; // run without multiplexing: slower, but it works
 }
 
 /**
